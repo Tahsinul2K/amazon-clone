@@ -1,6 +1,6 @@
 # API Documentation
 
-Base URL: `http://localhost:5000/api`
+Base URL: http://localhost:5000
 
 ---
 
@@ -12,8 +12,8 @@ Base URL: `http://localhost:5000/api`
   description       : registers a new seller account
   expected json body:
   {
-    "fullName": "seller",
-    "email": "seller@example.com",
+    "fullName": "seller1",
+    "email": "seller1@gmail.com",
     "password": "password",
     "busisnessAddress": "house"
   }
@@ -24,8 +24,8 @@ Base URL: `http://localhost:5000/api`
   description       : registers a new buyer account
   expected json body:
   {
-    "fullName": "buyer",
-    "email": "buyer@example.com",
+    "fullName": "buyer1",
+    "email": "buyer1@gmail.com",
     "password": "password"
   }
 
@@ -36,7 +36,7 @@ Base URL: `http://localhost:5000/api`
   description       : logs seller in and creates a session
   expected json body:
   {
-    "email": "seller@example.com",
+    "email": "seller1@gmail.com",
     "password": "password"
   }
 
@@ -47,7 +47,7 @@ Base URL: `http://localhost:5000/api`
   description       : logs buyer in and creates a session
   expected json body:
   {
-    "email": "buyer@example.com",
+    "email": "buyer1@gmail.com",
     "password": "password"
   }
 
@@ -72,7 +72,6 @@ Base URL: `http://localhost:5000/api`
 
 
 
-*** currently stock and product unit have not been implemented ***
 # create product
   url               : /api/products/create
   method            : POST
@@ -85,4 +84,29 @@ Base URL: `http://localhost:5000/api`
     "stock": 150
   }
 
+---
 
+
+3. cart endpoints
+
+# add product to cart
+  url               : /api/cart/items
+  method            : POST
+  description       : creates cart if not exists. adds product units to cart_item
+  expected json body:
+  {
+    "productId": 3,
+    "quantity": 10
+  }
+
+# get cart items
+  url               : /api/cart
+  method            : GET
+  description       : returns all items in the cart for the logged-in buyer
+  expected json body: none
+
+# delete cart item
+  url               : /api/cart/items/:unitId
+  method            : DELETE
+  description       : deletes a specific item from the cart for the logged-in buyer
+  expected json body: none

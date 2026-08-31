@@ -1,6 +1,13 @@
 const pool = require('../db');
 const bcrypt = require('bcrypt');
 
+
+/* 
+  req.session will contain
+    buyerId
+    sellerId 
+*/
+
 // POST /api/register/seller
 const postRegisterSeller = async (req, res) => {
     try {
