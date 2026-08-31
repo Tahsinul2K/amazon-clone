@@ -1,0 +1,88 @@
+# API Documentation
+
+Base URL: `http://localhost:5000/api`
+
+---
+
+1. authentication endpoints
+
+# register seller
+  url               : /api/register/seller
+  method            : POST
+  description       : registers a new seller account
+  expected json body:
+  {
+    "fullName": "seller",
+    "email": "seller@example.com",
+    "password": "password",
+    "busisnessAddress": "house"
+  }
+
+* register buyer
+  url               : /api/register/buyer
+  method            : POST
+  description       : registers a new buyer account
+  expected json body:
+  {
+    "fullName": "buyer",
+    "email": "buyer@example.com",
+    "password": "password"
+  }
+
+
+# login seller
+  url               : /api/login/seller
+  method            : POST
+  description       : logs seller in and creates a session
+  expected json body:
+  {
+    "email": "seller@example.com",
+    "password": "password"
+  }
+
+
+# login buyer
+  url               : /api/login/buyer
+  method            : POST
+  description       : logs buyer in and creates a session
+  expected json body:
+  {
+    "email": "buyer@example.com",
+    "password": "password"
+  }
+
+
+
+---
+
+2. product endpoints
+
+# get all products
+  url               : /api/products
+  method            : GET
+  description       : returns all products in json format
+  expected json body: none
+
+
+# get product by id
+  url               : /api/products/:id
+  method            : GET
+  description       : returns exactly one product in json
+  expected json body: none
+
+
+
+*** currently stock and product unit have not been implemented ***
+# create product
+  url               : /api/products/create
+  method            : POST
+  description       : creates new product. Requires seller authentication
+  expected json body:
+  {
+    "title": "Wireless Mouse",
+    "description": "Ergonomic wireless",
+    "price": 29.99,
+    "stock": 150
+  }
+
+

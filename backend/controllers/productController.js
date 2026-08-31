@@ -40,11 +40,13 @@ const getProductById = async (req, res) => {
 }
 
 
+// use transactions here later
 // POST /api/products/create
 const postProductsCreate = async (req, res) => {
     try {
-        const { name, description, price } = req.body;
-        const sellerId = req.session.sellerId;
+        const { name, description, price, stock } = req.body;
+        const sellerId = req.session.sellerId;      // assumes we already authenticated seller
+        const stock_ = parseInt(stock, 10) || 0;
 
         const result = await pool.query(`
             INSERT INTO PRODUCT (PRODUCT_NAME, PRODUCT_DESCRIPTION, PRICE, SELLER_ID)
@@ -52,9 +54,23 @@ const postProductsCreate = async (req, res) => {
             RETURNING *
         `, [name, description, price, sellerId]);
 
+        const productId = result.rows[0].product_id;
+
+        // insert everything into product_unit
+        const values = [];
+        for(let i = 0; i < stock_; i++){
+            values.push("($1)");
+        }
+
+        await pool.query(`
+            INSERT INTO PRODUCT_UNIT (PRODUCT_ID)
+            VALUES ${values.join(", ")}
+        `, [productId]);
+
         res.status(200).json({
             message: 'Product created successfully',
-            product: result.rows[0]
+            product: result.rows[0],
+            stock: stock
         });
     } catch (err) {
         console.error(err);
