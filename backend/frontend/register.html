@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Amazon Clone | Create account</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <a class="brand" href="/" aria-label="Amazon Clone home">amazon<span>clone</span></a>
+      <section class="auth-card" aria-labelledby="register-title">
+        <h1 id="register-title">Create account</h1>
+        <form id="register-form" novalidate>
+          <label for="role">Account type</label>
+          <select id="role" name="role"><option value="buyer">Buyer</option><option value="seller">Seller</option></select>
+          <label for="full-name">Your name</label>
+          <input id="full-name" name="fullName" type="text" autocomplete="name" required minlength="2" />
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="email" required />
+          <div id="business-address-field" hidden>
+            <label for="business-address">Business address</label>
+            <textarea id="business-address" name="businessAddress" autocomplete="street-address"></textarea>
+          </div>
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="new-password" required minlength="8" aria-describedby="password-hint" />
+          <p id="password-hint" class="field-hint">Must be at least 8 characters.</p>
+          <label for="confirm-password">Re-enter password</label>
+          <input id="confirm-password" name="confirmPassword" type="password" autocomplete="new-password" required />
+          <p id="form-message" class="form-message" role="alert" aria-live="polite"></p>
+          <button id="submit-button" type="submit">Create your account</button>
+        </form>
+      </section>
+      <p class="account-link">Already have an account? <a href="/">Sign in</a></p>
+    </main>
+    <script src="/register.js"></script>
+  </body>
+</html>

@@ -110,7 +110,7 @@ CREATE TABLE product_unit (
     CONSTRAINT product_unit_product_id_fk
         FOREIGN KEY (product_id)
         REFERENCES product(product_id)
-        ON DELETE RESTRICT
+        ON DELETE RESTRICT --Okay
 );
 
 COMMIT;

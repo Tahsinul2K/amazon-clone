@@ -2,7 +2,8 @@ const pool = require('../db');
 // assume buyer has already been authenticated
 
 
-
+//To do:
+// 1. delete cart
 
 
 
@@ -23,7 +24,6 @@ const postCartItems = async (req, res) => {
             FROM CART
             WHERE BUYER_ID = $1
         `, [buyerId]);
-            
         let cartId;
             
         // create cart if not exists
