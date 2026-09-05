@@ -25,7 +25,7 @@ const getProductById = async (req, res) => {
         const result = await pool.query(`
             SELECT *
             FROM PRODUCT
-            WHERE ID = $1
+            WHERE PRODUCT_ID = $1
         `, [productId]);
         
         if (result.rows.length === 0) {
@@ -40,19 +40,42 @@ const getProductById = async (req, res) => {
 }
 
 
-// use transactions here later
+// Product and ProductUnit creation must happen in one transaction
 // POST /api/products/create
 const postProductsCreate = async (req, res) => {
+    const client = await pool.connect();
     try {
+        
+
         const { name, description, price, stock } = req.body;
         const sellerId = req.session.sellerId;      // assumes we already authenticated seller
-        const stock_ = parseInt(stock, 10) || 0;
 
-        const result = await pool.query(`
+        if (!name || !description || price === undefined || stock === undefined) {
+            return res.status(400).json({
+            error: 'Name, description, price and stock are required'
+            });
+        }
+        const price_ = Number(price);
+        const stock_ = Number(stock);
+
+        if (!Number.isFinite(price_) || price_ <= 0) {
+            return res.status(400).json({
+            error: 'Price must be a positive number'
+        });
+    }
+
+    if (!Number.isInteger(stock_) || stock_ < 0) {
+        return res.status(400).json({
+        error: 'Stock must be a non-negative integer'
+        });
+    }
+
+    await client.query('BEGIN');
+    const result = await client.query(`
             INSERT INTO PRODUCT (PRODUCT_NAME, PRODUCT_DESCRIPTION, PRICE, SELLER_ID)
             VALUES ($1, $2, $3, $4)
             RETURNING *
-        `, [name, description, price, sellerId]);
+        `, [name, description, price_, sellerId]);
 
         const productId = result.rows[0].product_id;
 
@@ -62,19 +85,24 @@ const postProductsCreate = async (req, res) => {
             values.push("($1)");
         }
 
-        await pool.query(`
+        await client.query(`
             INSERT INTO PRODUCT_UNIT (PRODUCT_ID)
             VALUES ${values.join(", ")}
         `, [productId]);
 
+        await client.query('COMMIT');
+
         res.status(200).json({
             message: 'Product created successfully',
             product: result.rows[0],
-            stock: stock
+            stock: stock_
         });
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error(err);
         res.status(500).json({error: 'Database error'});
+    } finally{
+        client.release();
     }
 }
 
