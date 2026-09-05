@@ -23,6 +23,7 @@ const postCartItems = async (req, res) => {
             SELECT *
             FROM CART
             WHERE BUYER_ID = $1
+            AND STATUS = 'active'
         `, [buyerId]);
         let cartId;
             
@@ -46,7 +47,9 @@ const postCartItems = async (req, res) => {
             SELECT *
             FROM PRODUCT_UNIT
             WHERE PRODUCT_ID = $1 AND UNIT_STATUS = 'available'
+            ORDER BY UNIT_ID
             LIMIT $2
+            FOR UPDATE SKIP LOCKED
         `, [productId, quantity_]);
 
         let units = unitsResult.rows;
@@ -104,6 +107,7 @@ const getCart = async (req, res) => {
             SELECT *
             FROM CART C JOIN CART_ITEM I ON C.CART_ID = I.CART_ID
             WHERE C.BUYER_ID = $1
+            AND C.STATUS = 'active'
         `, [buyerID]);
 
         res.status(200).json({
@@ -121,32 +125,47 @@ const getCart = async (req, res) => {
 // DELETE /api/cart/items/:unitId
 const deleteCartItem = async (req, res) => {
     const client = await pool.connect();
+
     try {
         await client.query('BEGIN');
 
         const buyerId = req.session.buyerId;
         const unitId = req.params.unitId;
 
-        // check if buyer was cart with unitId
+        // Check whether this unit belongs to the buyer's active cart
         const cartResult = await client.query(`
-            SELECT *
-            FROM CART C JOIN CART_ITEM I ON C.CART_ID = I.CART_ID
-            WHERE C.BUYER_ID = $1 AND I.UNIT_ID = $2
+            SELECT
+                C.CART_ID,
+                C.BUYER_ID,
+                C.STATUS,
+                C.CREATED_AT,
+                I.UNIT_ID,
+                I.RESERVED_UNTIL
+            FROM CART C
+            JOIN CART_ITEM I
+                ON C.CART_ID = I.CART_ID
+            WHERE C.BUYER_ID = $1
+              AND C.STATUS = 'active'
+              AND I.UNIT_ID = $2
         `, [buyerId, unitId]);
 
-        if(cartResult.rows.length === 0){
+        if (cartResult.rows.length === 0) {
             await client.query('ROLLBACK');
-            res.status(400).json({error: 'item not in buyer cart'});
+            return res.status(400).json({
+                error: 'Item not in buyer cart'
+            });
         }
 
-        // delete from cart_item
-        await client.query(`
-            DELETE
-            FROM CART_ITEM
-            WHERE UNIT_ID = $1
-        `, [unitId]);
+        const cartId = cartResult.rows[0].cart_id;
 
-        // update status
+        // Delete the item from this specific cart
+        await client.query(`
+            DELETE FROM CART_ITEM
+            WHERE CART_ID = $1
+              AND UNIT_ID = $2
+        `, [cartId, unitId]);
+
+        // Release the physical unit
         await client.query(`
             UPDATE PRODUCT_UNIT
             SET UNIT_STATUS = 'available'
@@ -156,18 +175,20 @@ const deleteCartItem = async (req, res) => {
         await client.query('COMMIT');
 
         res.status(200).json({
-            message: 'item deleted from cart',
+            message: 'Item deleted from cart',
             item: cartResult.rows
-        })
+        });
 
     } catch (err) {
         await client.query('ROLLBACK');
         console.error(err);
-        res.status(500).json({error: 'Database error'});
+        res.status(500).json({
+            error: 'Database error'
+        });
     } finally {
         client.release();
     }
-}
+};
 
 module.exports = {
     postCartItems,
