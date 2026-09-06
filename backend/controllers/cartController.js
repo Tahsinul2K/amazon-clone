@@ -6,18 +6,74 @@ const pool = require('../db');
 // 1. delete cart
 
 
+const cleanupExpiredReservations = async (client) => {
+    // Find expired reservations
+    const expiredItems = await client.query(`
+        SELECT UNIT_ID
+        FROM CART_ITEM
+        WHERE RESERVED_UNTIL <= CURRENT_TIMESTAMP
+    `);
 
+    if (expiredItems.rows.length === 0) {
+        return;
+    }
+
+    const unitIds = expiredItems.rows.map(item => item.unit_id);
+
+    // Release the physical units
+    await client.query(`
+        UPDATE PRODUCT_UNIT
+        SET UNIT_STATUS = 'available'
+        WHERE UNIT_ID = ANY($1)
+    `, [unitIds]);
+
+    // Remove the expired cart reservations
+    await client.query(`
+        DELETE FROM CART_ITEM
+        WHERE UNIT_ID = ANY($1)
+    `, [unitIds]);
+};
 
 // POST /api/cart/items
 const postCartItems = async (req, res) => {
     const buyerId = req.session.buyerId;
     const { productId, quantity } = req.body;
-    const quantity_ = parseInt(quantity);
+
+    const productId_ = Number(productId);
+    const quantity_ = Number(quantity);
+    if (!Number.isInteger(quantity_) || quantity_ <= 0) {
+        return res.status(400).json({
+        error: 'Quantity must be a positive integer'
+        });
+    }
+
+    if(!Number.isInteger(productId_) || productId_ <= 0) {
+        return res.status(400).json({
+            error: 'Product ID must be a positive integer'
+        });
+    }
 
     const client = await pool.connect();
 
     try {
         await client.query('BEGIN');
+
+        // Release expired reservations first
+        await cleanupExpiredReservations(client);
+
+        // Check whether the product exists
+        const productResult = await client.query(`
+            SELECT PRODUCT_ID
+            FROM PRODUCT
+            WHERE PRODUCT_ID = $1
+        `, [productId_]);
+
+        if (productResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({
+            error: 'Product does not exist'
+        });
+        }
 
         const cartResult = await client.query(`
             SELECT *
@@ -50,7 +106,7 @@ const postCartItems = async (req, res) => {
             ORDER BY UNIT_ID
             LIMIT $2
             FOR UPDATE SKIP LOCKED
-        `, [productId, quantity_]);
+        `, [productId_, quantity_]);
 
         let units = unitsResult.rows;
 
@@ -85,8 +141,8 @@ const postCartItems = async (req, res) => {
         res.status(200).json({
             message: 'Items added to cart',
             cartId: cartId,
-            productId: productId,
-            quantity: quantity
+            productId: productId_,
+            quantity: quantity_
         })
     } catch (err) {
         await client.query('ROLLBACK');
@@ -100,15 +156,39 @@ const postCartItems = async (req, res) => {
 
 // GET /api/cart
 const getCart = async (req, res) => {
+    const client = await pool.connect();
+
     try {
+        await client.query('BEGIN');
+
         const buyerID = req.session.buyerId;
 
-        const result = await pool.query(`
-            SELECT *
-            FROM CART C JOIN CART_ITEM I ON C.CART_ID = I.CART_ID
-            WHERE C.BUYER_ID = $1
-            AND C.STATUS = 'active'
+        // Release expired reservations first
+        await cleanupExpiredReservations(client);
+
+        // Get the buyer's active cart
+        const result = await client.query(`
+        SELECT
+            C.CART_ID,
+            C.BUYER_ID,
+            I.UNIT_ID,
+            I.RESERVED_UNTIL,
+            P.PRODUCT_ID,
+            P.PRODUCT_NAME,
+            P.PRODUCT_DESCRIPTION,
+            P.PRICE
+        FROM CART C
+        JOIN CART_ITEM I
+            ON C.CART_ID = I.CART_ID
+        JOIN PRODUCT_UNIT PU
+            ON I.UNIT_ID = PU.UNIT_ID
+        JOIN PRODUCT P
+            ON PU.PRODUCT_ID = P.PRODUCT_ID
+        WHERE C.BUYER_ID = $1
+        AND C.STATUS = 'active'
         `, [buyerID]);
+
+        await client.query('COMMIT');
 
         res.status(200).json({
             message: 'viewing cart successful',
@@ -116,10 +196,15 @@ const getCart = async (req, res) => {
         });
 
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error(err);
-        res.status(500).json({error: 'Database error'})
+        res.status(500).json({
+            error: 'Database error'
+        });
+    } finally {
+        client.release();
     }
-}
+};
 
 
 // DELETE /api/cart/items/:unitId
