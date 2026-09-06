@@ -12,7 +12,7 @@ const app = express();
 // middleware
 app.use(express.json());
 app.use(express.urlencoded({extended: true}));
-app.use(express.static('frontend'));
+app.use(express.static('../frontend'));
 app.use(session({
     store: new  pgSession({
         pool,
