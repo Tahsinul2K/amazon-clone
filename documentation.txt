@@ -15,7 +15,7 @@ Base URL: http://localhost:5000
     "fullName": "seller1",
     "email": "seller1@gmail.com",
     "password": "password",
-    "busisnessAddress": "house"
+    "businessAddress": "house"
   }
 
 * register buyer
