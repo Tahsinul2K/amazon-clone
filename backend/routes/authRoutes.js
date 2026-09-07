@@ -8,6 +8,7 @@ router.post('/register/buyer', authController.postRegisterBuyer);
 router.post('/login/seller', authController.postLoginSeller);
 router.post('/login/buyer', authController.postLoginBuyer);
 router.post('/logout', authController.postLogout);
+router.get('/session', authController.getSession);
 router.post('/login/admin', authController.postLoginAdmin);
 
 router.get('/admin/test', auth.requiresAdminAuth, (req, res) => {

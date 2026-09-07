@@ -252,11 +252,43 @@ const postLoginAdmin = async (req, res) => {
     }
 };
 
+
+const getSession = (req, res) => {
+    if (req.session.buyerId) {
+        return res.status(200).json({
+            authenticated: true,
+            role: 'buyer',
+            id: req.session.buyerId
+        });
+    }
+
+    if (req.session.sellerId) {
+        return res.status(200).json({
+            authenticated: true,
+            role: 'seller',
+            id: req.session.sellerId
+        });
+    }
+
+    if (req.session.adminId) {
+        return res.status(200).json({
+            authenticated: true,
+            role: 'admin',
+            id: req.session.adminId
+        });
+    }
+
+    return res.status(200).json({
+        authenticated: false
+    });
+};
+
 module.exports = {
     postRegisterSeller,
     postRegisterBuyer,
     postLoginSeller,
     postLoginBuyer,
     postLogout,
-    postLoginAdmin
+    postLoginAdmin,
+    getSession
 }

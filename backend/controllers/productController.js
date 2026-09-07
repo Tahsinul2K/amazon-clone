@@ -98,10 +98,12 @@ const postProductsCreate = async (req, res) => {
             values.push("($1)");
         }
 
-        await client.query(`
-            INSERT INTO PRODUCT_UNIT (PRODUCT_ID)
-            VALUES ${values.join(", ")}
-        `, [productId]);
+        if(stock_ > 0) {
+            await client.query(`
+                INSERT INTO PRODUCT_UNIT (PRODUCT_ID)
+                VALUES ${values.join(", ")}
+            `, [productId]);
+        }
 
         await client.query('COMMIT');
 
