@@ -18,6 +18,24 @@ const postOrders = async (req, res) => {
     
         const addressId = Number(addressId_);
 
+        if (!Number.isInteger(addressId) || addressId <= 0) {
+            return res.status(400).json({
+            error: 'Address ID must be a positive integer'
+            });
+        }
+
+        if (typeof receiverName !== 'string' || !receiverName.trim()) {
+            return res.status(400).json({
+            error: 'Receiver name is required'
+            });
+        }
+
+        if (typeof receiverPhoneNumber !== 'string' || !receiverPhoneNumber.trim()) {
+            return res.status(400).json({
+            error: 'Receiver phone number is required'
+            });
+        }
+
         await client.query('BEGIN');
 
         // check if address belongs to buyer
@@ -34,20 +52,35 @@ const postOrders = async (req, res) => {
 
         // check cart
         const cartResult = await client.query(`
-            SELECT *
-            FROM CART C
-            JOIN CART_ITEM CI ON CI.CART_ID = C.CART_ID
-            JOIN PRODUCT_UNIT PU ON PU.UNIT_ID = CI.UNIT_ID
-            JOIN PRODUCT P ON P.PRODUCT_ID = PU.PRODUCT_ID
-            WHERE C.BUYER_ID = $1
-              AND C.STATUS = 'active'
-              AND PU.UNIT_STATUS = 'reserved'
-              AND CI.RESERVED_UNTIL > CURRENT_TIMESTAMP
+        SELECT
+        C.CART_ID,
+        CI.UNIT_ID,
+        PU.UNIT_STATUS,
+        CI.RESERVED_UNTIL
+        FROM CART C
+        JOIN CART_ITEM CI
+        ON CI.CART_ID = C.CART_ID
+        JOIN PRODUCT_UNIT PU
+        ON PU.UNIT_ID = CI.UNIT_ID
+        WHERE C.BUYER_ID = $1
+        AND C.STATUS = 'active'
         `, [buyerId]);
 
         if(cartResult.rows.length === 0){
             await client.query('ROLLBACK');
-            return res.status(400).json({error: 'cart is empty or reservation expired'});
+            return res.status(400).json({error: 'Cart is empty'});
+        }
+
+        const invalidItem = cartResult.rows.some(item =>
+        item.unit_status !== 'reserved' ||
+        new Date(item.reserved_until) <= new Date()
+        );
+
+        if (invalidItem) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+            error: 'One or more cart items have expired. Please update your cart.'
+            });
         }
 
         const cartId = cartResult.rows[0].cart_id;
@@ -62,29 +95,56 @@ const postOrders = async (req, res) => {
 
 
         // insert into order items
-        await client.query(`
+        const orderItemResult = await client.query(`
             INSERT INTO ORDER_ITEM(ORDER_ID, UNIT_ID, UNIT_PRICE)
             SELECT $1, CI.UNIT_ID, P.PRICE
             FROM CART_ITEM CI
             JOIN PRODUCT_UNIT PU ON PU.UNIT_ID = CI.UNIT_ID
             JOIN PRODUCT P ON P.PRODUCT_ID = PU.PRODUCT_ID
             WHERE CI.CART_ID = $2
+                AND PU.UNIT_STATUS = 'reserved'
+                AND CI.RESERVED_UNTIL > CURRENT_TIMESTAMP
         `, [orderId, cartId]);
 
+        if (orderItemResult.rowCount !== cartResult.rows.length) {
+            throw new Error('Not all cart items were transferred to the order');
+        }
+
+        //total price
+        const totalResult = await client.query(`
+            SELECT COALESCE(SUM(UNIT_PRICE), 0) AS total
+            FROM ORDER_ITEM
+            WHERE ORDER_ID = $1
+        `, [orderId]);
+
+        const orderTotal = Number(totalResult.rows[0].total);
+
+        //Insert into payment
+        await client.query(`
+        INSERT INTO PAYMENT (
+            ORDER_ID,
+            PAYMENT_METHOD,
+            PAYMENT_STATUS,
+            AMOUNT
+        )
+        VALUES ($1, 'cash_on_delivery', 'pending', $2)
+        `, [orderId, orderTotal]);
 
         // update product unit
         await client.query(`
             UPDATE PRODUCT_UNIT PU
             SET UNIT_STATUS = 'sold'
             FROM CART_ITEM CI
-            WHERE CI.CART_ID = $1 AND CI.UNIT_ID = PU.UNIT_ID
+            WHERE CI.CART_ID = $1
+            AND CI.UNIT_ID = PU.UNIT_ID
+            AND PU.UNIT_STATUS = 'reserved'
+            AND CI.RESERVED_UNTIL > CURRENT_TIMESTAMP
         `, [cartId]);
 
         // delete cart
         await client.query(`
-            DELETE 
-            FROM CART
-            WHERE CART_ID = $1
+        DELETE FROM CART
+        WHERE CART_ID = $1
         `, [cartId]);
 
         await client.query('COMMIT');
