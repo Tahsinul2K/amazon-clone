@@ -7,9 +7,9 @@ const router = express.Router();
 router.post('/orders', auth.requiresBuyerAuth, orderController.postOrders);
 
 router.post(
-    '/admin/orders/:orderId/assign-delivery',
+    '/admin/orders/:orderId/complete',
     auth.requiresAdminAuth,
-    orderController.assignDeliveryBoy
+    orderController.completeOrder
 );
 
 module.exports = router;

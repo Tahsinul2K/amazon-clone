@@ -3,9 +3,179 @@ const pool = require('../db');
 
 // to do: add get order and payment handling and delivery handling
 
+// helper function of completeOrder, assigns the oldest pending order to an available delivery.
+const assignWaitingOrderToDeliveryBoy = async (client, deliveryBoyId) => {
+    // Find the oldest pending order waiting for a delivery boy
+    const pendingOrderResult = await client.query(`
+        SELECT ORDER_ID
+        FROM ORDERS
+        WHERE STATUS = 'pending'
+          AND DELIVERY_BOY_ID IS NULL
+        ORDER BY CREATED_AT
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+    `);
+
+    // No pending order is waiting
+    if (pendingOrderResult.rows.length === 0) {
+        return null;
+    }
+
+    const orderId = pendingOrderResult.rows[0].order_id;
+
+    // Assign the delivery boy to the order
+    await client.query(`
+        UPDATE ORDERS
+        SET DELIVERY_BOY_ID = $1,
+            STATUS = 'shipped'
+        WHERE ORDER_ID = $2
+    `, [deliveryBoyId, orderId]);
+
+    // Mark the delivery boy as assigned
+    await client.query(`
+        UPDATE DELIVERY_BOY
+        SET STATUS = 'assigned'
+        WHERE DELIVERY_BOY_ID = $1
+    `, [deliveryBoyId]);
+
+    return orderId;
+};
+
+// admin marks an order to be completed, then the delivery boy is available again. If there is an order that is waiting for delivery boy, it will be assigned to the available delivery boy.
+// POST /admin/orders/:orderId/complete
+const completeOrder = async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+        const orderId = Number(req.params.orderId);
+
+        if (!Number.isInteger(orderId) || orderId <= 0) {
+            return res.status(400).json({
+                error: 'Order ID must be a positive integer'
+            });
+        }
+
+        await client.query('BEGIN');
+
+        // Find the order
+        const orderResult = await client.query(`
+            SELECT ORDER_ID, DELIVERY_BOY_ID, STATUS
+            FROM ORDERS
+            WHERE ORDER_ID = $1
+            FOR UPDATE
+        `, [orderId]);
+
+        if (orderResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+
+            return res.status(404).json({
+                error: 'Order not found'
+            });
+        }
+
+        const order = orderResult.rows[0];
+
+        // Only shipped orders can be completed
+        if (order.status !== 'shipped') {
+            await client.query('ROLLBACK');
+
+            return res.status(400).json({
+                error: 'Only shipped orders can be completed'
+            });
+        }
+
+        // The order must have a delivery boy
+        if (order.delivery_boy_id === null) {
+            await client.query('ROLLBACK');
+
+            return res.status(400).json({
+                error: 'Order has no assigned delivery boy'
+            });
+        }
+
+        // Mark the order as delivered
+        await client.query(`
+            UPDATE ORDERS
+            SET STATUS = 'delivered',
+                COMPLETED_AT = CURRENT_TIMESTAMP
+            WHERE ORDER_ID = $1
+        `, [orderId]);
+
+        // Make the delivery boy available
+        await client.query(`
+            UPDATE DELIVERY_BOY
+            SET STATUS = 'available'
+            WHERE DELIVERY_BOY_ID = $1
+        `, [order.delivery_boy_id]);
+
+        // Immediately assign the freed delivery boy
+        // to the oldest waiting order
+        const assignedOrderId =
+            await assignWaitingOrderToDeliveryBoy(
+                client,
+                order.delivery_boy_id
+            );
+
+        await client.query('COMMIT');
+
+        res.status(200).json({
+            message: 'Order marked as delivered',
+            reassignedOrderId: assignedOrderId
+        });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+
+        console.error(err);
+
+        res.status(500).json({
+            error: 'Database error'
+        });
+    } finally {
+        client.release();
+    }
+};
+
+
+// Assign delivery boy to order
+const assignAvailableDeliveryBoy = async (client, orderId) => {
+    // Find one available delivery boy
+    const deliveryBoyResult = await client.query(`
+        SELECT DELIVERY_BOY_ID
+        FROM DELIVERY_BOY
+        WHERE STATUS = 'available'
+        ORDER BY DELIVERY_BOY_ID
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+    `);
+
+    // No delivery boy is currently available
+    if (deliveryBoyResult.rows.length === 0) {
+        return null;
+    }
+
+    const deliveryBoyId = deliveryBoyResult.rows[0].delivery_boy_id;
+
+    // Assign the delivery boy to the order
+    await client.query(`
+        UPDATE ORDERS
+        SET DELIVERY_BOY_ID = $1,
+            STATUS = 'shipped'
+        WHERE ORDER_ID = $2
+    `, [deliveryBoyId, orderId]);
+
+    // Mark delivery boy as assigned
+    await client.query(`
+        UPDATE DELIVERY_BOY
+        SET STATUS = 'assigned'
+        WHERE DELIVERY_BOY_ID = $1
+    `, [deliveryBoyId]);
+
+    return deliveryBoyId;
+};
 
 // /api/orders
-// delivery boy and payment not handled yet
+// Place an order with COD payment and automatic delivery assignment
 const postOrders = async (req, res) => {
     const client = await pool.connect();
     try {
@@ -141,6 +311,13 @@ const postOrders = async (req, res) => {
             AND CI.RESERVED_UNTIL > CURRENT_TIMESTAMP
         `, [cartId]);
 
+        //automatic assign delivery boy
+        const deliveryBoyId = await assignAvailableDeliveryBoy(client, orderId);
+
+        if (!deliveryBoyId) {
+            console.log('No available delivery boy at the moment. Order will be assigned later.');
+        }
+        
         // delete cart
         await client.query(`
         DELETE FROM CART
@@ -149,9 +326,16 @@ const postOrders = async (req, res) => {
 
         await client.query('COMMIT');
 
+        // Fetch the final order details to return in the response
+        const finalOrderResult = await client.query(`
+        SELECT *
+        FROM ORDERS
+        WHERE ORDER_ID = $1
+        `, [orderId]);
+
         res.status(201).json({
-            message: 'Order has been placed',
-            order: orderResult.rows[0]
+        message: 'Order has been placed',
+        order: finalOrderResult.rows[0]
         });
 
     } catch (err) {
@@ -166,5 +350,6 @@ const postOrders = async (req, res) => {
 
 
 module.exports = {
-    postOrders
+    postOrders,
+    completeOrder
 }

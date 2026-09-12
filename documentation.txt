@@ -51,7 +51,11 @@ Base URL: http://localhost:5000
     "password": "password"
   }
 
-
+# logout
+  url               : /api/logout
+  method            : POST
+  description       : logs off user and invalidates the cookie
+  expected json body: none
 
 ---
 
@@ -110,3 +114,27 @@ Base URL: http://localhost:5000
   method            : DELETE
   description       : deletes a specific item from the cart for the logged-in buyer
   expected json body: none
+
+4. Placing an order
+
+# place an order
+  url		    : /api/orders
+  method 	    : POST
+  description       : places the order, deletes the cart, assigns any free delivery boy to that order automatically
+  expected json body: (the address ID must belong to that specific buyer, it is checked whether or not the address belongs to the   current buyer or not)
+  {
+    "addressId_": 2, 
+    "receiverName": "Mijo",
+    "receiverPhoneNumber": "01850286110"
+  }
+
+if a delivery boy is open, assign him to the order [order.status -> 'shipped', delivery_boy.status -> 'assigned']
+else [order.status -> 'pending']
+
+# order has been delivered and completed
+  url		    : /admin/orders/:orderId/complete
+  method 	    : POST
+  description       : admin marks an order as completed, then the delivery boy who was assigned to that order will be available again. If there is a pending order, it will be assigned to that recently available delivery boy.
+  expected json body: none
+
+
