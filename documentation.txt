@@ -138,3 +138,22 @@ else [order.status -> 'pending']
   expected json body: none
 
 
+----
+
+5. review endpoints
+
+# get product reviews
+  url               : /api/product/:productId/reviews
+  method            : GET
+  description       : returns all reviews and ratings for a specific product in json format
+  expected json body: none
+
+# post product review
+  url               : /api/product/:productId/review
+  method            : POST
+  description       : creates a review for a product. Requires buyer authentication and that the buyer has purchased and received the product.
+  expected json body:
+  {
+    "rating": 5,
+    "reviewText": "Great product, very comfortable!"
+  }
