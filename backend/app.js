@@ -8,6 +8,7 @@ const productRoutes = require('./routes/productRoutes');
 const cartRoutes = require('./routes/cartRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
+const addressRoutes = require('./routes/addressRoutes');
 
 const app = express();
 
@@ -37,6 +38,7 @@ app.use('/api', productRoutes);
 app.use('/api', cartRoutes);
 app.use('/api', orderRoutes);
 app.use('/api', reviewRoutes);
+app.use('/api', addressRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

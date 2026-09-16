@@ -2,7 +2,10 @@
 
 Base URL: http://localhost:5000
 
----
+
+-----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------
+
 
 1. authentication endpoints
 
@@ -57,7 +60,10 @@ Base URL: http://localhost:5000
   description       : logs off user and invalidates the cookie
   expected json body: none
 
----
+
+-----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------
+
 
 2. product endpoints
 
@@ -88,7 +94,9 @@ Base URL: http://localhost:5000
     "stock": 150
   }
 
----
+
+-----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------
 
 
 3. cart endpoints
@@ -115,6 +123,11 @@ Base URL: http://localhost:5000
   description       : deletes a specific item from the cart for the logged-in buyer
   expected json body: none
 
+
+-----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------
+
+
 4. Placing an order
 
 # place an order
@@ -138,7 +151,9 @@ else [order.status -> 'pending']
   expected json body: none
 
 
-----
+-----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------
+
 
 5. review endpoints
 
@@ -157,3 +172,66 @@ else [order.status -> 'pending']
     "rating": 5,
     "reviewText": "Great product, very comfortable!"
   }
+
+
+# edit product review
+  url               : /api/product/:productId/review
+  method            : PUT
+  description       : updates an existing review for a product. Requires buyer authentication.
+  expected json body:
+  {
+    "rating": 4,
+    "reviewText": "Updated review text!"
+  }
+
+# delete product review
+  url               : /api/product/:productId/review
+  method            : DELETE
+  description       : deletes the logged-in buyer's review for a product. Requires buyer authentication.
+  expected json body: none
+
+
+
+-----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------
+
+
+6. address endpoints
+
+# add address
+  url               : /api/address
+  method            : POST
+  description       : adds a new shipping address for the logged-in buyer
+  expected json body:
+  {
+    "label": "Home",
+    "street": "123 Main St",
+    "city": "New York",
+    "postalCode": "10001",
+    "country": "USA",
+    "isCurrent": true
+  }
+
+# get all addresses
+  url               : /api/addresses
+  method            : GET
+  description       : returns all saved addresses for the logged-in buyer
+  expected json body: none
+
+# get current address
+  url               : /api/address/current
+  method            : GET
+  description       : returns the currently selected default shipping address for the logged-in buyer
+  expected json body: none
+
+# set current address
+  url               : /api/address/:addressId/current
+  method            : PUT
+  description       : sets a specific saved address as the current active shipping address
+  expected json body: none
+
+# delete address
+  url               : /api/address/:addressId
+  method            : DELETE
+  description       : deletes a specific address (fails if linked to past orders)
+  expected json body: none
