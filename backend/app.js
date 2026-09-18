@@ -1,4 +1,5 @@
 require('dotenv').config();
+const path = require('path');
 const express = require('express');
 const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
@@ -9,6 +10,7 @@ const cartRoutes = require('./routes/cartRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const addressRoutes = require('./routes/addressRoutes');
+const productImageRoutes = require('./routes/productImageRoutes');
 
 const app = express();
 
@@ -16,6 +18,7 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({extended: true}));
 app.use(express.static('../frontend'));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(session({
     store: new  pgSession({
         pool,
@@ -39,6 +42,8 @@ app.use('/api', cartRoutes);
 app.use('/api', orderRoutes);
 app.use('/api', reviewRoutes);
 app.use('/api', addressRoutes);
+app.use('/api', productImageRoutes);
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

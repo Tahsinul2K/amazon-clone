@@ -88,7 +88,7 @@ Base URL: http://localhost:5000
   description       : creates new product. Requires seller authentication
   expected json body:
   {
-    "title": "Wireless Mouse",
+    "name": "Wireless Mouse",
     "description": "Ergonomic wireless",
     "price": 29.99,
     "stock": 150
@@ -234,4 +234,31 @@ else [order.status -> 'pending']
   url               : /api/address/:addressId
   method            : DELETE
   description       : deletes a specific address (fails if linked to past orders)
+  expected json body: none
+
+
+
+-----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------
+
+
+7. product image endpoints
+
+# upload product images
+  url               : /api/products/:productId/images
+  method            : POST
+  description       : uploads up to 5 image files for a product. Requires seller authentication.
+  expected form-data: 
+    - images: [file1, file2, ...]
+
+# set primary image
+  url               : /api/products/:productId/images/:imageId/primary
+  method            : PUT
+  description       : sets a specific image as the primary image for a product. Requires seller authentication.
+  expected json body: none
+
+# delete product image
+  url               : /api/images/:imageId
+  method            : DELETE
+  description       : deletes an image from the database and the server disk. Requires seller authentication.
   expected json body: none
