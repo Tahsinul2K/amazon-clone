@@ -5,6 +5,7 @@ const orderController = require('../controllers/orderController');
 const router = express.Router();
 
 router.post('/orders', auth.requiresBuyerAuth, orderController.postOrders);
+router.get('/orders', auth.requiresBuyerAuth, orderController.getBuyerOrders);
 
 router.post(
     '/admin/orders/:orderId/complete',

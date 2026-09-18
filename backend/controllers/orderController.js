@@ -349,7 +349,66 @@ const postOrders = async (req, res) => {
 
 
 
+// Get all orders for the logged-in buyer
+const getBuyerOrders = async (req, res) => {
+    try {
+        const buyerId = req.session.buyerId;
+
+        const result = await pool.query(`
+            SELECT
+                o.order_id,
+                o.status,
+                o.created_at,
+                o.completed_at,
+                o.receiver_name,
+                o.receiver_phone_number,
+                items.items
+            FROM orders o
+            JOIN (
+                SELECT
+                    oi.order_id,
+                    json_agg(
+                        json_build_object(
+                            'productId', product_items.product_id,
+                            'productName', product_items.product_name,
+                            'unitPrice', product_items.unit_price,
+                            'quantity', product_items.quantity,
+                            'imageUrl', product_items.image_url
+                        )
+                        ORDER BY product_items.product_name
+                    ) AS items
+                FROM (
+                    SELECT
+                        oi.order_id,
+                        p.product_id,
+                        p.product_name,
+                        oi.unit_price,
+                        COUNT(*) AS quantity,
+                        MAX(pi.image_url) AS image_url
+                    FROM order_item oi
+                    JOIN product_unit pu ON oi.unit_id = pu.unit_id
+                    JOIN product p ON pu.product_id = p.product_id
+                    LEFT JOIN product_image pi
+                        ON p.product_id = pi.product_id
+                       AND pi.is_primary = TRUE
+                    GROUP BY oi.order_id, p.product_id, p.product_name, oi.unit_price
+                ) product_items
+                GROUP BY product_items.order_id
+            ) items ON items.order_id = o.order_id
+            WHERE o.buyer_id = $1
+            ORDER BY o.created_at DESC
+        `, [buyerId]);
+
+        res.status(200).json({ orders: result.rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Database error' });
+    }
+};
+
+
 module.exports = {
     postOrders,
-    completeOrder
+    completeOrder,
+    getBuyerOrders
 }

@@ -150,6 +150,13 @@ else [order.status -> 'pending']
   description       : admin marks an order as completed, then the delivery boy who was assigned to that order will be available again. If there is a pending order, it will be assigned to that recently available delivery boy.
   expected json body: none
 
+# get buyer orders
+  url               : /api/orders
+  method            : GET
+  description       : returns all past and active orders for the logged-in buyer with items and images. Requires buyer authentication.
+  expected json body: none
+
+
 
 -----------------------------------------------------------------------------------------
 -----------------------------------------------------------------------------------------
