@@ -32,6 +32,7 @@ const api = {
   product: (id) => request(`/products/${id}`),
   sellerProducts: () => request('/seller/products'),
   orders: () => request('/orders'),
+  placeOrder: (body) => request('/orders', { method: 'POST', body: JSON.stringify(body) }),
   cart: () => request('/cart'),
   addToCart: (productId, quantity) => request('/cart/items', { method: 'POST', body: JSON.stringify({ productId, quantity }) }),
   removeCartItem: (unitId) => request(`/cart/items/${unitId}`, { method: 'DELETE' }),
@@ -127,7 +128,77 @@ function Login() { const [role, setRole] = useState('buyer'); const [email, setE
 
 function Register({ role }) { const seller = role === 'seller'; const [form, setForm] = useState({ fullName: '', email: '', password: '', confirm: '', businessAddress: '' }); const [error, setError] = useState(''); const [success, setSuccess] = useState(''); const navigate = useNavigate(); const change = (e) => setForm({ ...form, [e.target.name]: e.target.value }); const submit = async (event) => { event.preventDefault(); if (form.password !== form.confirm) return setError('Passwords do not match.'); try { await api.register(role, { fullName: form.fullName, email: form.email, password: form.password, ...(seller ? { businessAddress: form.businessAddress } : {}) }); setSuccess('Account created.'); setTimeout(() => navigate('/login'), 700); } catch (e) { setError(e.message); } }; return <main className="auth-page"><section className="auth-card"><p className="eyebrow">Join the marketplace</p><h1>Create a {role} account</h1><form onSubmit={submit}><label>Full name<input name="fullName" required value={form.fullName} onChange={change} /></label><label>Email<input name="email" type="email" required value={form.email} onChange={change} /></label>{seller && <label>Business address<input name="businessAddress" required value={form.businessAddress} onChange={change} /></label>}<label>Password<input name="password" type="password" minLength="8" required value={form.password} onChange={change} /></label><label>Confirm password<input name="confirm" type="password" required value={form.confirm} onChange={change} /></label>{error && <p className="error">{error}</p>}{success && <p className="success">{success}</p>}<button>Create account</button></form><p className="muted"><Link to={seller ? '/register/buyer' : '/register/seller'}>Register as a {seller ? 'buyer' : 'seller'}</Link> · <Link to="/login">Sign in</Link></p></section></main>; }
 
-function Cart() { const [items, setItems] = useState(null); const [error, setError] = useState(''); const load = () => api.cart().then((result) => setItems(result.cart || [])).catch((e) => setError(e.message)); useEffect(() => { load(); }, []); if (!items) return <main><Loading /></main>; const grouped = Object.values(items.reduce((map, item) => { const current = map[item.product_id] || { ...item, units: [] }; current.units.push(item.unit_id); map[item.product_id] = current; return map; }, {})); const total = grouped.reduce((sum, item) => sum + Number(item.price) * item.units.length, 0); return <main><section className="page-heading"><div><p className="eyebrow">Your basket</p><h1>Cart</h1></div><Link className="back-link" to="/">Continue shopping</Link></section>{error && <ErrorMessage message={error} />}{!grouped.length ? <p className="state">Your cart is empty.</p> : <section className="cart-list">{grouped.map((item) => <article className="cart-row" key={item.product_id}><div><h2>{item.product_name}</h2><p>{money(item.price)} each · {item.units.length} unit(s)</p></div><div>{item.units.map((unitId) => <button className="small-button" key={unitId} onClick={async () => { await api.removeCartItem(unitId); load(); }}>Remove</button>)}</div></article>)}<div className="cart-total"><span>Total</span><strong>{money(total)}</strong></div><p className="muted">Checkout is handled by the order workflow currently exposed by the backend.</p></section>}</main>; }
+function Cart() {
+  const [items, setItems] = useState(null);
+  const [addresses, setAddresses] = useState([]);
+  const [selectedAddressId, setSelectedAddressId] = useState('');
+  const [receiverName, setReceiverName] = useState('');
+  const [receiverPhoneNumber, setReceiverPhoneNumber] = useState('');
+  const [checkoutMessage, setCheckoutMessage] = useState('');
+  const [error, setError] = useState('');
+
+  const load = () => Promise.all([
+    api.cart().then((result) => setItems(result.cart || [])).catch((e) => setError(e.message)),
+    api.addresses().then((result) => {
+      const list = result.addresses || [];
+      setAddresses(list);
+      const current = list.find((address) => address.is_current) || list[0];
+      setSelectedAddressId(current ? String(current.address_id) : '');
+    }).catch((e) => setError(e.message))
+  ]);
+
+  useEffect(() => { load(); }, []);
+
+  const grouped = Object.values((items || []).reduce((map, item) => {
+    const current = map[item.product_id] || { ...item, units: [] };
+    current.units.push(item.unit_id);
+    map[item.product_id] = current;
+    return map;
+  }, {}));
+
+  const total = grouped.reduce((sum, item) => sum + Number(item.price) * item.units.length, 0);
+
+  const submitOrder = async (event) => {
+    event.preventDefault();
+    setError('');
+    setCheckoutMessage('');
+
+    if (!selectedAddressId) {
+      setError('Choose a shipping address before checkout.');
+      return;
+    }
+
+    if (!receiverName.trim()) {
+      setError('Receiver name is required.');
+      return;
+    }
+
+    if (!receiverPhoneNumber.trim()) {
+      setError('Receiver phone number is required.');
+      return;
+    }
+
+    try {
+      const result = await api.placeOrder({
+        addressId_: Number(selectedAddressId),
+        receiverName: receiverName.trim(),
+        receiverPhoneNumber: receiverPhoneNumber.trim()
+      });
+
+      setCheckoutMessage(result.message || 'Order placed successfully.');
+      setSelectedAddressId('');
+      setReceiverName('');
+      setReceiverPhoneNumber('');
+      await load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  if (!items) return <main><Loading /></main>;
+
+  return <main><section className="page-heading"><div><p className="eyebrow">Your basket</p><h1>Cart</h1></div><Link className="back-link" to="/">Continue shopping</Link></section>{error && <ErrorMessage message={error} />}{!grouped.length ? <p className="state">Your cart is empty.</p> : <section className="cart-list">{grouped.map((item) => <article className="cart-row" key={item.product_id}><div><h2>{item.product_name}</h2><p>{money(item.price)} each · {item.units.length} unit(s)</p></div><div>{item.units.map((unitId) => <button className="small-button" key={unitId} onClick={async () => { await api.removeCartItem(unitId); load(); }}>Remove</button>)}</div></article>)}<div className="cart-total"><span>Total</span><strong>{money(total)}</strong></div><div className="checkout-panel"><h2>Checkout</h2><p className="muted">Cash on delivery only.</p><form className="compact-form" onSubmit={submitOrder}><label>Shipping address<select value={selectedAddressId} onChange={(e) => setSelectedAddressId(e.target.value)}>{addresses.length ? addresses.map((address) => <option key={address.address_id} value={address.address_id}>{address.label}: {address.street}, {address.city}, {address.country}</option>) : <option value="">No saved addresses</option>}</select></label><label>Receiver name<input value={receiverName} onChange={(e) => setReceiverName(e.target.value)} placeholder="Full name" /></label><label>Receiver phone number<input value={receiverPhoneNumber} onChange={(e) => setReceiverPhoneNumber(e.target.value)} placeholder="Phone number" /></label><button type="submit" disabled={!grouped.length}>Place order</button>{checkoutMessage && <p className="success">{checkoutMessage}</p>}</form></div></section>}</main>;
+}
 
 function AddressBook() { const [addresses, setAddresses] = useState([]); const [form, setForm] = useState({ label: 'Home', street: '', city: '', postalCode: '', country: '', isCurrent: true }); const [error, setError] = useState(''); const load = () => api.addresses().then((result) => setAddresses(result.addresses || [])).catch((e) => setError(e.message)); useEffect(() => { load(); }, []); const submit = async (event) => { event.preventDefault(); try { await api.addAddress({ ...form, isCurrent: Boolean(form.isCurrent) }); setForm({ label: 'Home', street: '', city: '', postalCode: '', country: '', isCurrent: false }); load(); } catch (e) { setError(e.message); } }; return <section className="dashboard-panel"><div className="section-heading"><div><p className="eyebrow">Shipping</p><h2>Address book</h2></div></div><form className="compact-form" onSubmit={submit}><input placeholder="Nickname, e.g. Home" required value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} /><input placeholder="Street address" required value={form.street} onChange={(e) => setForm({ ...form, street: e.target.value })} /><div className="form-grid"><input placeholder="City" required value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /><input placeholder="Postal code" required value={form.postalCode} onChange={(e) => setForm({ ...form, postalCode: e.target.value })} /></div><input placeholder="Country" required value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} /><label className="check-label"><input type="checkbox" checked={form.isCurrent} onChange={(e) => setForm({ ...form, isCurrent: e.target.checked })} /> Use as current shipping address</label><button>Add address</button></form>{error && <p className="error">{error}</p>}<div className="address-list">{addresses.map((address) => <article className={`address-item ${address.is_current ? 'selected' : ''}`} key={address.address_id}><div><strong>{address.label}</strong><p>{address.street}, {address.city}, {address.postal_code}, {address.country}</p></div><div className="form-actions">{address.is_current ? <span className="current-tag">Current</span> : <button className="small-button" onClick={() => api.setCurrentAddress(address.address_id).then(load).catch((e) => setError(e.message))}>Use this</button>}<button className="small-button danger-button" onClick={() => api.deleteAddress(address.address_id).then(load).catch((e) => setError(e.message))}>Delete</button></div></article>)}</div></section>; }
 
@@ -151,9 +222,98 @@ function CompactAddressBook() {
 }
 
 function OrderHistory() {
-  const [orders, setOrders] = useState([]); const [open, setOpen] = useState(false); const [error, setError] = useState('');
-  useEffect(() => { api.orders().then((result) => setOrders(result.orders || [])).catch((e) => setError(e.message)); }, []);
-  return <section className="dashboard-panel order-history"><div className="section-heading"><div><p className="eyebrow">Your purchases</p><h2>Previously ordered</h2></div><button className="small-button" onClick={() => setOpen(!open)}>{open ? 'Hide history' : `View history (${orders.length})`}</button></div>{error ? <p className="error">{error}</p> : !open ? <p className="muted">Your completed and active purchases will appear here.</p> : !orders.length ? <p className="muted">No orders yet.</p> : <div className="order-list">{orders.map((order) => <article className="order-card" key={order.order_id}><div className="order-card-heading"><strong>Order #{order.order_id}</strong><span className="status-pill">{order.status}</span><small>{new Date(order.created_at).toLocaleDateString()}</small></div><div className="ordered-items">{(order.items || []).map((item) => <div className="ordered-item" key={`${order.order_id}-${item.productId}`}><img src={imageUrl(item.imageUrl)} alt="" /><div><strong>{item.productName}</strong><span>Qty {item.quantity} · {money(item.unitPrice)} each</span></div></div>)}</div></article>)}</div>}</section>;
+  const [orders, setOrders] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.orders()
+      .then((result) => setOrders(result.orders || []))
+      .catch((e) => setError(e.message));
+  }, []);
+
+  const formatDate = (value) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
+  };
+
+  return (
+    <section className="dashboard-panel order-history">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Your purchases</p>
+          <h2>Previously ordered</h2>
+        </div>
+        <button className="small-button" onClick={() => setOpen(!open)}>
+          {open ? 'Hide history' : `View history (${orders.length})`}
+        </button>
+      </div>
+
+      {error ? (
+        <p className="error">{error}</p>
+      ) : !open ? (
+        <p className="muted">Your completed and active purchases will appear here.</p>
+      ) : !orders.length ? (
+        <p className="muted">No orders yet.</p>
+      ) : (
+        <div className="order-list">
+          {orders.map((order) => {
+            const items = Array.isArray(order.items) ? order.items : [];
+            const total = Number(order.total_amount ?? order.totalAmount ?? order.amount ?? 0);
+            const paymentMethod = order.payment_method ?? order.paymentMethod ?? 'Cash on delivery';
+            const paymentStatus = order.payment_status ?? order.paymentStatus ?? 'pending';
+            const receiverName = order.receiver_name ?? order.receiverName ?? 'Receiver';
+            const receiverPhone = order.receiver_phone_number ?? order.receiverPhoneNumber ?? '—';
+
+            return (
+              <article className="order-card" key={order.order_id ?? order.orderId}>
+                <div className="order-card-heading">
+                  <strong>Order #{order.order_id ?? order.orderId}</strong>
+                  <span className="status-pill">{order.status}</span>
+                  <small>{formatDate(order.created_at ?? order.createdAt)}</small>
+                </div>
+
+                <div className="order-summary-row">
+                  <span>{receiverName}</span>
+                  <span>{receiverPhone}</span>
+                </div>
+
+                <div className="order-meta-list">
+                  <span>Payment: {paymentMethod}</span>
+                  <span>Status: {paymentStatus}</span>
+                  <span>Total: {money(total)}</span>
+                </div>
+
+                {items.length ? (
+                  <div className="ordered-items">
+                    {items.map((item, index) => {
+                      const itemName = item.productName ?? item.product_name ?? 'Product';
+                      const itemQuantity = Number(item.quantity ?? 1);
+                      const itemPrice = Number(item.unitPrice ?? item.unit_price ?? 0);
+                      const image = item.imageUrl ?? item.image_url ?? item.image ?? '';
+
+                      return (
+                        <div className="ordered-item" key={`${order.order_id ?? order.orderId}-${item.productId ?? item.product_id ?? index}`}>
+                          {image ? <img src={imageUrl(image)} alt="" /> : <div className="image-placeholder small"><span>Item</span></div>}
+                          <div>
+                            <strong>{itemName}</strong>
+                            <span>Qty {itemQuantity} · {money(itemPrice)} each</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="muted">No item details are attached to this order in the current backend response.</p>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
 }
 
 function BuyerDashboard() { return <Guard role="buyer"><main><section className="dashboard-hero"><p className="eyebrow">Buyer dashboard</p><h1>Your marketplace, organized.</h1><p className="muted">Keep your delivery details and purchases close at hand.</p></section><div className="buyer-dashboard-stack"><OrderHistory /><CompactAddressBook /></div></main></Guard>; }

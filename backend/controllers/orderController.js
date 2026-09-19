@@ -92,6 +92,39 @@ const completeOrder = async (req, res) => {
                 error: 'Order has no assigned delivery boy'
             });
         }
+        // Check the payment associated with the order
+        const paymentResult = await client.query(`
+        SELECT PAYMENT_ID, PAYMENT_STATUS, PAYMENT_METHOD, AMOUNT
+        FROM PAYMENT
+        WHERE ORDER_ID = $1
+        FOR UPDATE
+        `, [orderId]);
+
+        if (paymentResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+
+        return res.status(400).json({
+        error: 'Payment record not found'
+    });
+    }
+
+    const payment = paymentResult.rows[0];
+
+    if (payment.payment_method !== 'cash_on_delivery') {
+    await client.query('ROLLBACK');
+
+    return res.status(400).json({
+        error: 'Order does not have a COD payment'
+    });
+    }
+
+    if (payment.payment_status !== 'pending') {
+        await client.query('ROLLBACK');
+
+        return res.status(400).json({
+            error: 'Payment has already been processed'
+        });
+    }
 
         // Mark the order as delivered
         await client.query(`
@@ -100,6 +133,14 @@ const completeOrder = async (req, res) => {
                 COMPLETED_AT = CURRENT_TIMESTAMP
             WHERE ORDER_ID = $1
         `, [orderId]);
+
+        // Mark the COD payment as paid
+        await client.query(`
+            UPDATE PAYMENT
+            SET PAYMENT_STATUS = 'paid',
+            PAID_AT = CURRENT_TIMESTAMP
+            WHERE PAYMENT_ID = $1
+        `, [payment.payment_id]);
 
         // Make the delivery boy available
         await client.query(`
@@ -347,68 +388,44 @@ const postOrders = async (req, res) => {
     }
 };
 
-
-
-// Get all orders for the logged-in buyer
-const getBuyerOrders = async (req, res) => {
+// GET /api/orders
+const getOrders = async (req, res) => {
     try {
         const buyerId = req.session.buyerId;
 
-        const result = await pool.query(`
+        const ordersResult = await pool.query(`
             SELECT
-                o.order_id,
-                o.status,
-                o.created_at,
-                o.completed_at,
-                o.receiver_name,
-                o.receiver_phone_number,
-                items.items
-            FROM orders o
-            JOIN (
-                SELECT
-                    oi.order_id,
-                    json_agg(
-                        json_build_object(
-                            'productId', product_items.product_id,
-                            'productName', product_items.product_name,
-                            'unitPrice', product_items.unit_price,
-                            'quantity', product_items.quantity,
-                            'imageUrl', product_items.image_url
-                        )
-                        ORDER BY product_items.product_name
-                    ) AS items
-                FROM (
-                    SELECT
-                        oi.order_id,
-                        p.product_id,
-                        p.product_name,
-                        oi.unit_price,
-                        COUNT(*) AS quantity,
-                        MAX(pi.image_url) AS image_url
-                    FROM order_item oi
-                    JOIN product_unit pu ON oi.unit_id = pu.unit_id
-                    JOIN product p ON pu.product_id = p.product_id
-                    LEFT JOIN product_image pi
-                        ON p.product_id = pi.product_id
-                       AND pi.is_primary = TRUE
-                    GROUP BY oi.order_id, p.product_id, p.product_name, oi.unit_price
-                ) product_items
-                GROUP BY product_items.order_id
-            ) items ON items.order_id = o.order_id
-            WHERE o.buyer_id = $1
-            ORDER BY o.created_at DESC
+                O.ORDER_ID,
+                O.STATUS,
+                O.RECEIVER_NAME,
+                O.RECEIVER_PHONE_NUMBER,
+                O.CREATED_AT,
+                O.COMPLETED_AT,
+                P.PAYMENT_METHOD,
+                P.PAYMENT_STATUS,
+                P.AMOUNT AS TOTAL_AMOUNT
+            FROM ORDERS O
+            LEFT JOIN PAYMENT P
+                ON P.ORDER_ID = O.ORDER_ID
+            WHERE O.BUYER_ID = $1
+            ORDER BY O.CREATED_AT DESC
         `, [buyerId]);
 
-        res.status(200).json({ orders: result.rows });
+        res.status(200).json({
+            orders: ordersResult.rows
+        });
+
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Database error' });
+
+        res.status(500).json({
+            error: 'Database error'
+        });
     }
 };
-
 
 module.exports = {
     postOrders,
     completeOrder,
-    getBuyerOrders
+    getOrders
 }
