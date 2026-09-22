@@ -11,6 +11,7 @@ const orderRoutes = require('./routes/orderRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const addressRoutes = require('./routes/addressRoutes');
 const productImageRoutes = require('./routes/productImageRoutes');
+const categoryRoutes = require('./routes/categoryRoutes');
 
 const app = express();
 
@@ -43,7 +44,7 @@ app.use('/api', orderRoutes);
 app.use('/api', reviewRoutes);
 app.use('/api', addressRoutes);
 app.use('/api', productImageRoutes);
-
+app.use('/api', categoryRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

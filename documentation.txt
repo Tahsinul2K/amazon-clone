@@ -269,3 +269,15 @@ else [order.status -> 'pending']
   method            : DELETE
   description       : deletes an image from the database and the server disk. Requires seller authentication.
   expected json body: none
+
+  8. Category
+
+  # add new Category
+  url               : /api/categories
+  method            : POST
+  description       : Creates a new Category
+  expected json body: 
+  {
+    "categoryName": "Something"
+    "parentCategoryId": <existing id of a category> (optional, dont add this line if the category is the parent);
+  }

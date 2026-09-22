@@ -13,4 +13,10 @@ router.post(
     orderController.completeOrder
 );
 
+router.get(
+    '/orders/:orderId',
+    auth.requiresBuyerAuth,
+    orderController.getOrderById
+);
+
 module.exports = router;

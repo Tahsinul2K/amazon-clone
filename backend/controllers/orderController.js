@@ -424,8 +424,75 @@ const getOrders = async (req, res) => {
     }
 };
 
+const getOrderById = async (req, res) => {
+    try {
+        const buyerId = req.session.buyerId;
+        const orderId = Number(req.params.orderId);
+
+        if (!Number.isInteger(orderId) || orderId <= 0) {
+            return res.status(400).json({
+                error: 'Order ID must be a positive integer'
+            });
+        }
+
+        const orderResult = await pool.query(`
+            SELECT
+                O.ORDER_ID,
+                O.STATUS,
+                O.RECEIVER_NAME,
+                O.RECEIVER_PHONE_NUMBER,
+                O.CREATED_AT,
+                O.COMPLETED_AT,
+                P.PAYMENT_METHOD,
+                P.PAYMENT_STATUS,
+                P.AMOUNT AS TOTAL_AMOUNT
+            FROM ORDERS O
+            LEFT JOIN PAYMENT P
+                ON P.ORDER_ID = O.ORDER_ID
+            WHERE O.ORDER_ID = $1
+              AND O.BUYER_ID = $2
+        `, [orderId, buyerId]);
+
+        if (orderResult.rows.length === 0) {
+            return res.status(404).json({
+                error: 'Order not found'
+            });
+        }
+
+        const order = orderResult.rows[0];
+
+        const itemsResult = await pool.query(`
+            SELECT
+                OI.UNIT_ID,
+                OI.UNIT_PRICE,
+                P.PRODUCT_ID,
+                P.PRODUCT_NAME
+            FROM ORDER_ITEM OI
+            JOIN PRODUCT_UNIT PU
+                ON PU.UNIT_ID = OI.UNIT_ID
+            JOIN PRODUCT P
+                ON P.PRODUCT_ID = PU.PRODUCT_ID
+            WHERE OI.ORDER_ID = $1
+            ORDER BY OI.UNIT_ID
+        `, [orderId]);
+
+        res.status(200).json({
+            order,
+            items: itemsResult.rows
+        });
+
+    } catch (err) {
+        console.error(err);
+
+        res.status(500).json({
+            error: 'Database error'
+        });
+    }
+};
+
 module.exports = {
     postOrders,
     completeOrder,
-    getOrders
+    getOrders,
+    getOrderById
 }

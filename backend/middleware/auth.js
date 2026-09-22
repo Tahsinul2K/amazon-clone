@@ -49,8 +49,19 @@ const requiresAdminAuth = (req, res, next) => {
     next();
 }
 
+const requiresAnyAuth = (req, res, next) => {
+    if (!req.session.buyerId && !req.session.sellerId && !req.session.adminId) {
+        return res.status(401).json({
+            error: 'Login required'
+        });
+    }
+
+    next();
+};
+
 module.exports = {
     requiresBuyerAuth,
     requiresSellerAuth,
-    requiresAdminAuth
+    requiresAdminAuth,
+    requiresAnyAuth
 };
