@@ -124,6 +124,83 @@ const getProductById = async (req, res) => {
     }
 };
 
+// GET /api/products/category/:categoryId
+const getProductsByCategory = async (req, res) => {
+    try {
+        const categoryId = Number(req.params.categoryId);
+
+        if (!Number.isInteger(categoryId) || categoryId <= 0) {
+            return res.status(400).json({ error: 'Invalid category ID' });
+        }
+
+        const categoryResult = await pool.query(
+            `SELECT category_id, category_name
+             FROM category
+             WHERE category_id = $1`,
+            [categoryId]
+        );
+
+        if (categoryResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Category not found' });
+        }
+
+        const result = await pool.query(`
+            SELECT
+                p.*,
+                (
+                    SELECT COUNT(*)
+                    FROM product_unit pu
+                    WHERE pu.product_id = p.product_id
+                      AND pu.unit_status = 'available'
+                ) AS available_stock,
+                COALESCE(
+                    (
+                        SELECT json_agg(
+                            json_build_object(
+                                'imageId', pi.image_id,
+                                'imageUrl', pi.image_url,
+                                'isPrimary', pi.is_primary
+                            )
+                            ORDER BY pi.is_primary DESC, pi.image_id
+                        )
+                        FROM product_image pi
+                        WHERE pi.product_id = p.product_id
+                    ),
+                    '[]'::json
+                ) AS images,
+                COALESCE(
+                    (
+                        SELECT json_agg(
+                            json_build_object(
+                                'categoryId', c.category_id,
+                                'categoryName', c.category_name
+                            )
+                            ORDER BY c.category_id
+                        )
+                        FROM product_category pc
+                        JOIN category c
+                            ON c.category_id = pc.category_id
+                        WHERE pc.product_id = p.product_id
+                    ),
+                    '[]'::json
+                ) AS categories
+            FROM product p
+            WHERE EXISTS (
+                SELECT 1
+                FROM product_category pc
+                WHERE pc.product_id = p.product_id
+                  AND pc.category_id = $1
+            )
+            ORDER BY p.product_id;
+        `, [categoryId]);
+
+        res.status(200).json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Database error' });
+    }
+};
+
 // GET /api/seller/products
 const getProductsBySellerId = async (req, res) => {
     try {
@@ -484,6 +561,7 @@ const removeProductCategory = async (req, res) => {
 module.exports = {
     getProducts,
     getProductById,
+    getProductsByCategory,
     getProductsBySellerId,
     postProductsCreate,
     updateProduct,

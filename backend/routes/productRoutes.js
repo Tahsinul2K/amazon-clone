@@ -6,6 +6,7 @@ const productImageController = require('../controllers/productImageController');
 const router = express.Router();
 
 router.get('/products', productController.getProducts);
+router.get('/products/category/:categoryId', productController.getProductsByCategory);
 router.get('/products/:id', productController.getProductById);
 router.get('/seller/products', auth.requiresSellerAuth, productController.getProductsBySellerId);
 
