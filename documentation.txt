@@ -126,24 +126,27 @@ Base URL: http://localhost:5000
   url               : /api/products/create
   method            : POST
   description       : creates new product. Requires seller authentication. Optional images can be uploaded in the same request (first image becomes primary)
-  expected form-data:
-    - name: "Wireless Mouse"
-    - description: "Ergonomic wireless"
-    - price: 29.99
-    - stock: 150
-    - images: [file1, file2, ...] (optional)
+  expected json body:
+  {
+    "name": "Wireless Mouse",
+    "description": "Ergonomic wireless",
+    "price": 29.99,
+    "stock": 150
+  }
 
 
 # update product
   url               : /api/products/:productId
   method            : PUT
   description       : updates a product owned by the logged-in seller. additionalStock adds that many new units. Optional new images can be uploaded. Requires seller authentication
-  expected form-data:
-    - name: "Wireless Mouse"
-    - description: "Updated description"
-    - price: 24.99
-    - additionalStock: 10
-    - images: [file1, file2, ...] (optional)
+  expected json body:
+  {
+    "name": "Wireless Mouse"
+    "description": "Updated description"
+    "price": 24.99
+    "additionalStock": 10
+    "images": [file1, file2, ...] (optional)
+  }
 
 
 # adding a product to a category
@@ -195,8 +198,8 @@ Base URL: http://localhost:5000
 4. Placing an order
 
 # place an order
-  url		    : /api/orders
-  method 	    : POST
+  url		            : /api/orders
+  method 	          : POST
   description       : places the order, deletes the cart, assigns any free delivery boy to that order automatically
   expected json body: (the address ID must belong to that specific buyer, it is checked whether or not the address belongs to the   current buyer or not)
   {
@@ -209,8 +212,8 @@ Base URL: http://localhost:5000
  else [order.status -> 'pending']
 
 # order has been delivered and completed
-  url		    : /api/admin/orders/:orderId/complete
-  method 	    : POST
+  url		            : /api/admin/orders/:orderId/complete
+  method 	          : POST
   description       : admin marks an order as completed, then the delivery boy who was assigned to that order will be available again. If there is a pending order, it will be assigned to that recently available delivery boy. Requires admin authentication.
   expected json body: none
 
