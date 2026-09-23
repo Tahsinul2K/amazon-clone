@@ -25,6 +25,7 @@
 - a GET api for the orders so that a buyer can see their orders
 
 ## dummy categories
+```
 BEGIN;
 
 -- Top-level categories
@@ -92,3 +93,5 @@ FROM category AS child
 LEFT JOIN category AS parent
     ON parent.category_id = child.parent_category_id
 ORDER BY parent.category_name NULLS FIRST, child.category_name;
+
+```
