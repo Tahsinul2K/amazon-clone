@@ -7,12 +7,14 @@ const getProducts = async (req, res) => {
         const result = await pool.query(`
             SELECT
                 p.*,
+
                 (
                     SELECT COUNT(*)
                     FROM product_unit pu
                     WHERE pu.product_id = p.product_id
                       AND pu.unit_status = 'available'
                 ) AS available_stock,
+
                 COALESCE(
                     (
                         SELECT json_agg(
@@ -27,7 +29,25 @@ const getProducts = async (req, res) => {
                         WHERE pi.product_id = p.product_id
                     ),
                     '[]'::json
-                ) AS images
+                ) AS images,
+
+                COALESCE(
+                    (
+                        SELECT json_agg(
+                            json_build_object(
+                                'categoryId', c.category_id,
+                                'categoryName', c.category_name
+                            )
+                            ORDER BY c.category_id
+                        )
+                        FROM product_category pc
+                        JOIN category c
+                            ON c.category_id = pc.category_id
+                        WHERE pc.product_id = p.product_id
+                    ),
+                    '[]'::json
+                ) AS categories
+
             FROM product p
             ORDER BY p.product_id;
         `);
@@ -72,7 +92,23 @@ const getProductById = async (req, res) => {
                         WHERE pi.product_id = p.product_id
                     ),
                     '[]'::json
-                ) AS images
+                ) AS images,
+                COALESCE(
+                    (
+                        SELECT json_agg(
+                            json_build_object(
+                                'categoryId', c.category_id,
+                                'categoryName', c.category_name
+                            )
+                            ORDER BY c.category_id
+                        )
+                        FROM product_category pc
+                        JOIN category c
+                            ON c.category_id = pc.category_id
+                        WHERE pc.product_id = p.product_id
+                    ),
+                    '[]'::json
+                ) AS categories
             FROM product p
             WHERE p.product_id = $1;
         `, [productId]);
@@ -116,7 +152,23 @@ const getProductsBySellerId = async (req, res) => {
                         WHERE pi.product_id = p.product_id
                     ),
                     '[]'::json
-                ) AS images
+                ) AS images,
+                COALESCE(
+                    (
+                        SELECT json_agg(
+                            json_build_object(
+                                'categoryId', c.category_id,
+                                'categoryName', c.category_name
+                            )
+                            ORDER BY c.category_id
+                        )
+                        FROM product_category pc
+                        JOIN category c
+                            ON c.category_id = pc.category_id
+                        WHERE pc.product_id = p.product_id
+                    ),
+                    '[]'::json
+                ) AS categories
             FROM product p
             WHERE p.seller_id = $1
             ORDER BY p.product_id;
