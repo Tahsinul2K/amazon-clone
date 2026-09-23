@@ -285,10 +285,156 @@ const updateProduct = async (req, res) => {
     }
 };
 
+const addProductCategory = async (req, res) => {
+    try {
+        const productId = Number(req.params.productId);
+        const categoryId = Number(req.params.categoryId);
+        const sellerId = req.session.sellerId;
+
+        // 1. Validate IDs
+        if (!Number.isInteger(productId) || productId <= 0) {
+            return res.status(400).json({
+                error: 'Product ID must be a positive integer'
+            });
+        }
+
+        if (!Number.isInteger(categoryId) || categoryId <= 0) {
+            return res.status(400).json({
+                error: 'Category ID must be a positive integer'
+            });
+        }
+
+        // 2. Check that the product belongs to the logged-in seller
+        const productResult = await pool.query(
+            `SELECT product_id
+             FROM product
+             WHERE product_id = $1
+               AND seller_id = $2`,
+            [productId, sellerId]
+        );
+
+        if (productResult.rows.length === 0) {
+            return res.status(404).json({
+                error: 'Product not found'
+            });
+        }
+
+        // 3. Check that the category exists
+        const categoryResult = await pool.query(
+            `SELECT category_id, category_name
+             FROM category
+             WHERE category_id = $1`,
+            [categoryId]
+        );
+
+        if (categoryResult.rows.length === 0) {
+            return res.status(404).json({
+                error: 'Category not found'
+            });
+        }
+
+        // 4. Add the product-category relationship
+        try {
+            await pool.query(
+                `INSERT INTO product_category
+                    (product_id, category_id)
+                 VALUES ($1, $2)`,
+                [productId, categoryId]
+            );
+        } catch (err) {
+            // Primary key violation means this relationship already exists
+            if (err.code === '23505') {
+                return res.status(409).json({
+                    error: 'Product is already assigned to this category'
+                });
+            }
+
+            throw err;
+        }
+
+        return res.status(201).json({
+            message: 'Category assigned to product successfully',
+            productId,
+            category: categoryResult.rows[0]
+        });
+
+    } catch (err) {
+        console.error(err);
+
+        return res.status(500).json({
+            error: 'Database error'
+        });
+    }
+};
+
+const removeProductCategory = async (req, res) => {
+    try {
+        const productId = Number(req.params.productId);
+        const categoryId = Number(req.params.categoryId);
+        const sellerId = req.session.sellerId;
+
+        if (!Number.isInteger(productId) || productId <= 0) {
+            return res.status(400).json({
+                error: 'Product ID must be a positive integer'
+            });
+        }
+
+        if (!Number.isInteger(categoryId) || categoryId <= 0) {
+            return res.status(400).json({
+                error: 'Category ID must be a positive integer'
+            });
+        }
+
+        // Check that the product belongs to the logged-in seller
+        const productResult = await pool.query(
+            `SELECT product_id
+             FROM product
+             WHERE product_id = $1
+               AND seller_id = $2`,
+            [productId, sellerId]
+        );
+
+        if (productResult.rows.length === 0) {
+            return res.status(404).json({
+                error: 'Product not found'
+            });
+        }
+
+        // Remove the category relationship
+        const result = await pool.query(
+            `DELETE FROM product_category
+             WHERE product_id = $1
+               AND category_id = $2`,
+            [productId, categoryId]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({
+                error: 'Product is not assigned to this category'
+            });
+        }
+
+        return res.status(200).json({
+            message: 'Category removed from product successfully',
+            productId,
+            categoryId
+        });
+
+    } catch (err) {
+        console.error(err);
+
+        return res.status(500).json({
+            error: 'Database error'
+        });
+    }
+};
+
 module.exports = {
     getProducts,
     getProductById,
     getProductsBySellerId,
     postProductsCreate,
     updateProduct,
+    addProductCategory,
+    removeProductCategory
 }

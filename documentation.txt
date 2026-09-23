@@ -94,6 +94,11 @@ Base URL: http://localhost:5000
     "stock": 150
   }
 
+# adding a product to a category
+  url               : /api/products/:productId/categories/:categoryId
+  method            : POST
+  description       : assigns a product to a category
+  expected json body: none
 
 -----------------------------------------------------------------------------------------
 -----------------------------------------------------------------------------------------
@@ -141,8 +146,8 @@ Base URL: http://localhost:5000
     "receiverPhoneNumber": "01850286110"
   }
 
-if a delivery boy is open, assign him to the order [order.status -> 'shipped', delivery_boy.status -> 'assigned']
-else [order.status -> 'pending']
+ if a delivery boy is open, assign him to the order [order.status -> 'shipped', delivery_boy.status -> 'assigned']
+ else [order.status -> 'pending']
 
 # order has been delivered and completed
   url		    : /admin/orders/:orderId/complete
@@ -270,9 +275,14 @@ else [order.status -> 'pending']
   description       : deletes an image from the database and the server disk. Requires seller authentication.
   expected json body: none
 
-  8. Category
 
-  # add new Category
+-----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------
+
+
+8. Category
+
+# add new Category
   url               : /api/categories
   method            : POST
   description       : Creates a new Category
@@ -281,3 +291,31 @@ else [order.status -> 'pending']
     "categoryName": "Something"
     "parentCategoryId": <existing id of a category> (optional, dont add this line if the category is the parent);
   }
+
+# get all categories
+  url               : /api/categories
+  method            : GET
+  description       : shows all categories
+  expected json body: none
+
+# get 1 category
+  url               : /api/categories/ :categoryID
+  method            : GET
+  description       : shows that specifiC category
+  expected json body: none
+
+# update a category's parent and name
+  url               : /api/categories/:categoryId
+  method            : PUT
+  description       : shows that specifiC category
+  expected json body:
+  {
+  "categoryName": "Smartphones",
+  "parentCategoryId": 1
+  }
+
+# delete a category
+  url               : /api/categories/:categoryId
+  method            : DELETE
+  description       : deletes that sepcified category
+  expected json body: none

@@ -23,5 +23,16 @@ router.put(
 	productController.updateProduct
 );
 
+router.post(
+    '/products/:productId/categories/:categoryId',
+    auth.requiresSellerAuth,
+    productController.addProductCategory
+);
+
+router.delete(
+    '/products/:productId/categories/:categoryId',
+    auth.requiresSellerAuth,
+    productController.removeProductCategory
+);
 
 module.exports = router;

@@ -22,4 +22,16 @@ router.get(
     categoryController.getCategoryById
 );
 
+router.put(
+    '/categories/:categoryId',
+    auth.requiresAdminAuth,
+    categoryController.updateCategory
+);
+
+router.delete(
+    '/categories/:categoryId',
+    auth.requiresAdminAuth,
+    categoryController.deleteCategory
+);
+
 module.exports = router;
