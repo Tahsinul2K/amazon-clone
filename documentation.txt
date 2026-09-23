@@ -54,6 +54,33 @@ Base URL: http://localhost:5000
     "password": "password"
   }
 
+
+# login admin
+  url               : /api/login/admin
+  method            : POST
+  description       : logs admin in and creates a session. Required for category create/update/delete and completing orders
+  expected json body:
+  {
+    "email": "admin@gmail.com",
+    "password": "password"
+  }
+
+# get current session
+  url               : /api/session
+  method            : GET
+  description       : returns the current session. role is "buyer", "seller", or "admin" when logged in
+  expected json body: none
+  example response (logged in):
+  {
+    "authenticated": true,
+    "role": "buyer",
+    "id": 1
+  }
+  example response (logged out):
+  {
+    "authenticated": false
+  }
+
 # logout
   url               : /api/logout
   method            : POST
@@ -77,27 +104,59 @@ Base URL: http://localhost:5000
 # get product by id
   url               : /api/products/:id
   method            : GET
-  description       : returns exactly one product in json
+  description       : returns exactly one product in json (includes images and categories)
   expected json body: none
 
+
+# get products by category
+  url               : /api/products/category/:categoryId
+  method            : GET
+  description       : returns all products assigned to that category. Returns 404 if the category does not exist
+  expected json body: none
+
+
+# get seller products
+  url               : /api/seller/products
+  method            : GET
+  description       : returns all products belonging to the logged-in seller (includes images and categories). Requires seller authentication
+  expected json body: none
 
 
 # create product
   url               : /api/products/create
   method            : POST
-  description       : creates new product. Requires seller authentication
-  expected json body:
-  {
-    "name": "Wireless Mouse",
-    "description": "Ergonomic wireless",
-    "price": 29.99,
-    "stock": 150
-  }
+  description       : creates new product. Requires seller authentication. Optional images can be uploaded in the same request (first image becomes primary)
+  expected form-data:
+    - name: "Wireless Mouse"
+    - description: "Ergonomic wireless"
+    - price: 29.99
+    - stock: 150
+    - images: [file1, file2, ...] (optional)
+
+
+# update product
+  url               : /api/products/:productId
+  method            : PUT
+  description       : updates a product owned by the logged-in seller. additionalStock adds that many new units. Optional new images can be uploaded. Requires seller authentication
+  expected form-data:
+    - name: "Wireless Mouse"
+    - description: "Updated description"
+    - price: 24.99
+    - additionalStock: 10
+    - images: [file1, file2, ...] (optional)
+
 
 # adding a product to a category
   url               : /api/products/:productId/categories/:categoryId
   method            : POST
-  description       : assigns a product to a category
+  description       : assigns a product to a category. Requires seller authentication. Product must belong to the logged-in seller
+  expected json body: none
+
+
+# remove a product from a category
+  url               : /api/products/:productId/categories/:categoryId
+  method            : DELETE
+  description       : removes a product from a category. Requires seller authentication. Product must belong to the logged-in seller
   expected json body: none
 
 -----------------------------------------------------------------------------------------
@@ -150,15 +209,21 @@ Base URL: http://localhost:5000
  else [order.status -> 'pending']
 
 # order has been delivered and completed
-  url		    : /admin/orders/:orderId/complete
+  url		    : /api/admin/orders/:orderId/complete
   method 	    : POST
-  description       : admin marks an order as completed, then the delivery boy who was assigned to that order will be available again. If there is a pending order, it will be assigned to that recently available delivery boy.
+  description       : admin marks an order as completed, then the delivery boy who was assigned to that order will be available again. If there is a pending order, it will be assigned to that recently available delivery boy. Requires admin authentication.
   expected json body: none
 
 # get buyer orders
   url               : /api/orders
   method            : GET
   description       : returns all past and active orders for the logged-in buyer with items and images. Requires buyer authentication.
+  expected json body: none
+
+# get one buyer order
+  url               : /api/orders/:orderId
+  method            : GET
+  description       : returns one order belonging to the logged-in buyer, with items. Requires buyer authentication.
   expected json body: none
 
 
@@ -285,37 +350,38 @@ Base URL: http://localhost:5000
 # add new Category
   url               : /api/categories
   method            : POST
-  description       : Creates a new Category
+  description       : Creates a new Category. Requires admin authentication
   expected json body: 
   {
-    "categoryName": "Something"
-    "parentCategoryId": <existing id of a category> (optional, dont add this line if the category is the parent);
+    "categoryName": "Something",
+    "parentCategoryId": 1
   }
+  parentCategoryId is optional. Omit it if this category is a top-level parent.
 
 # get all categories
   url               : /api/categories
   method            : GET
-  description       : shows all categories
+  description       : shows all categories. Requires login (buyer, seller, or admin)
   expected json body: none
 
 # get 1 category
-  url               : /api/categories/ :categoryID
+  url               : /api/categories/:categoryId
   method            : GET
-  description       : shows that specifiC category
+  description       : shows that specific category. Requires login (buyer, seller, or admin)
   expected json body: none
 
 # update a category's parent and name
   url               : /api/categories/:categoryId
   method            : PUT
-  description       : shows that specifiC category
+  description       : updates that category's name and parent. Requires admin authentication
   expected json body:
   {
-  "categoryName": "Smartphones",
-  "parentCategoryId": 1
+    "categoryName": "Smartphones",
+    "parentCategoryId": 1
   }
 
 # delete a category
   url               : /api/categories/:categoryId
   method            : DELETE
-  description       : deletes that sepcified category
+  description       : deletes that specified category. Fails if it still has child categories. Product links to this category are removed. Requires admin authentication
   expected json body: none
