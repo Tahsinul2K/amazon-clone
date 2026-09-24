@@ -305,13 +305,24 @@ const postOrders = async (req, res) => {
         const orderId = orderResult.rows[0].order_id;
 
 
-        // insert into order items
+        // insert into order items using the discounted price at checkout
         const orderItemResult = await client.query(`
             INSERT INTO ORDER_ITEM(ORDER_ID, UNIT_ID, UNIT_PRICE)
-            SELECT $1, CI.UNIT_ID, P.PRICE
+            SELECT
+                $1,
+                CI.UNIT_ID,
+                calculate_effective_price(
+                    P.PRICE,
+                    D.DISCOUNT_TYPE,
+                    D.DISCOUNT_VALUE,
+                    D.START_DATE,
+                    D.END_DATE,
+                    D.IS_ACTIVE
+                )
             FROM CART_ITEM CI
             JOIN PRODUCT_UNIT PU ON PU.UNIT_ID = CI.UNIT_ID
             JOIN PRODUCT P ON P.PRODUCT_ID = PU.PRODUCT_ID
+            LEFT JOIN DISCOUNT D ON D.DISCOUNT_ID = P.DISCOUNT_ID
             WHERE CI.CART_ID = $2
                 AND PU.UNIT_STATUS = 'reserved'
                 AND CI.RESERVED_UNTIL > CURRENT_TIMESTAMP
