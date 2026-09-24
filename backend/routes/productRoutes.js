@@ -42,4 +42,10 @@ router.put(
     productController.assignProductDiscount
 );
 
+router.delete(
+    '/products/:productId/discount',
+    auth.requiresSellerAuth,
+    productController.removeProductDiscount
+);
+
 module.exports = router;
