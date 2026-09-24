@@ -388,3 +388,46 @@ Base URL: http://localhost:5000
   method            : DELETE
   description       : deletes that specified category. Fails if it still has child categories. Product links to this category are removed. Requires admin authentication
   expected json body: none
+
+-----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------
+
+9. Discount
+
+#create discount (logged in as admin)
+url               : /api/discounts
+method            : POST
+description       : creates a new discount
+expected json body:
+{
+  "discountName": "Summer Sale",
+  "discountType": "percentage",
+  "discountValue": 20,
+  "startDate": "2026-09-24T00:00:00Z",
+  "endDate": "2026-10-01T00:00:00Z"
+}
+
+# get all discounts
+url               : /api/discounts
+method            : GET
+description       : shows all discounts
+expected json body: none
+
+# get discount by ID
+url               : /api/discounts/:discountId
+method            : GET
+description       : shows all discounts
+expected json body: none
+
+# update discount
+url               : /api/discounts/:discountId
+method            : PUT
+description       : updates information of discount
+expected json body: (if a one or more parameters are missing, then the endpoint will use the old value of the existing discount)
+{
+  "discountName": "Updated Summer Sale",
+  "discountType": "percentage",
+  "discountValue": 20,
+  "startDate": "2026-09-24T00:00:00Z",
+  "endDate": "2026-10-01T00:00:00Z"
+}
