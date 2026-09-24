@@ -558,6 +558,87 @@ const removeProductCategory = async (req, res) => {
     }
 };
 
+const assignProductDiscount = async (req, res) => {
+    try {
+        const productId = Number(req.params.productId);
+        const discountId = Number(req.body.discountId);
+        const sellerId = req.session.sellerId;
+
+        // Validate product ID
+        if (!Number.isInteger(productId) || productId <= 0) {
+            return res.status(400).json({
+                error: 'Product ID must be a positive integer'
+            });
+        }
+
+        // Validate discount ID
+        if (!Number.isInteger(discountId) || discountId <= 0) {
+            return res.status(400).json({
+                error: 'Discount ID must be a positive integer'
+            });
+        }
+
+        // Check that the product belongs to the logged-in seller
+        const productResult = await pool.query(
+            `SELECT product_id
+             FROM product
+             WHERE product_id = $1
+               AND seller_id = $2`,
+            [productId, sellerId]
+        );
+
+        if (productResult.rows.length === 0) {
+            return res.status(404).json({
+                error: 'Product not found'
+            });
+        }
+
+        // Check that the discount exists
+        const discountResult = await pool.query(
+            `SELECT
+                discount_id,
+                discount_name,
+                discount_type,
+                discount_value,
+                start_date,
+                end_date,
+                is_active
+             FROM discount
+             WHERE discount_id = $1`,
+            [discountId]
+        );
+
+        if (discountResult.rows.length === 0) {
+            return res.status(404).json({
+                error: 'Discount not found'
+            });
+        }
+
+        // Assign discount to product
+        const result = await pool.query(
+            `UPDATE product
+             SET discount_id = $1
+             WHERE product_id = $2
+               AND seller_id = $3
+             RETURNING product_id, discount_id`,
+            [discountId, productId, sellerId]
+        );
+
+        return res.status(200).json({
+            message: 'Discount assigned to product successfully',
+            product: result.rows[0],
+            discount: discountResult.rows[0]
+        });
+
+    } catch (err) {
+        console.error(err);
+
+        return res.status(500).json({
+            error: 'Database error'
+        });
+    }
+};
+
 module.exports = {
     getProducts,
     getProductById,
@@ -566,5 +647,6 @@ module.exports = {
     postProductsCreate,
     updateProduct,
     addProductCategory,
-    removeProductCategory
+    removeProductCategory,
+    assignProductDiscount
 }
