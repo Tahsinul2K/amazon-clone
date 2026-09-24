@@ -45,6 +45,8 @@ main { max-width: 1240px; margin: auto; padding: 42px 28px; }
 .truncate { color: #6d777b; min-height: 44px; margin: 0 0 15px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .product-meta { display: flex; justify-content: space-between; align-items: baseline; margin: 14px 0; }
 .product-meta strong, .detail-price { font: 700 24px Arial, sans-serif; color: #a64120; }
+.product-meta del, .detail-price del { color: #7b8588; font-size: 13px; font-weight: 400; margin-left: 5px; }
+.sale-label { display: inline-block; margin: 0 0 12px; padding: 4px 7px; background: #d7eee1; color: #216642; font: 700 11px Arial, sans-serif; border-radius: 3px; }
 .product-meta span, .stock { font: 13px Arial, sans-serif; color: #16704f; }
 .product-image, .image-placeholder { width: 100%; height: 220px; object-fit: cover; display: block; background: #e8e6df; }
 .image-placeholder { display: grid; place-items: center; color: #7c817f; font: 13px Arial, sans-serif; }
@@ -140,6 +142,12 @@ main { max-width: 1240px; margin: auto; padding: 42px 28px; }
 .seller-listing .product-image, .seller-listing .image-placeholder { width: 90px; height: 74px; }
 .seller-listing h3 { margin: 0; font-size: 20px; font-weight: 500; }
 .seller-listing p { margin: 4px 0; color: #69757c; font: 13px Arial, sans-serif; }
+.discount-manager { min-width: 0; }
+.discount-list { display: grid; gap: 9px; margin-top: 20px; }
+.discount-row { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 12px; border: 1px solid #ddd9d0; border-radius: 4px; }
+.discount-row p { margin: 4px 0 0; color: #69757c; font: 13px Arial, sans-serif; }
+.discount-select { display: block; margin-top: 9px; color: #536168; font: 700 12px Arial, sans-serif; }
+.discount-select select { display: block; width: min(100%, 280px); margin-top: 5px; padding: 8px; border: 1px solid #bfc8ca; border-radius: 3px; background: #fff; font: inherit; }
 
 @media (max-width: 760px) {
   .nav { padding: 14px 16px; align-items: flex-start; }
@@ -160,5 +168,6 @@ main { max-width: 1240px; margin: auto; padding: 42px 28px; }
   .form-grid { grid-template-columns: 1fr; }
   .seller-listing { grid-template-columns: 68px 1fr; }
   .seller-listing .small-button { grid-column: 2; justify-self: start; }
+  .discount-row { align-items: flex-start; }
   .seller-listing .product-image, .seller-listing .image-placeholder { width: 68px; height: 60px; }
 }
