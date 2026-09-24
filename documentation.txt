@@ -162,6 +162,16 @@ Base URL: http://localhost:5000
   description       : removes a product from a category. Requires seller authentication. Product must belong to the logged-in seller
   expected json body: none
 
+# adding a discount to the product
+  url               : /api/products/:productId/discount
+  method            : PUT
+  description       : adds a discount to the product
+  expected json body:
+  {
+    "discountId": 4
+  }
+
+  
 -----------------------------------------------------------------------------------------
 -----------------------------------------------------------------------------------------
 
