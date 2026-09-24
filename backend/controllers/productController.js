@@ -639,6 +639,63 @@ const assignProductDiscount = async (req, res) => {
     }
 };
 
+const removeProductDiscount = async (req, res) => {
+    try {
+        const productId = Number(req.params.productId);
+        const sellerId = req.session.sellerId;
+
+        if (!Number.isInteger(productId) || productId <= 0) {
+            return res.status(400).json({
+                error: 'Product ID must be a positive integer'
+            });
+        }
+
+        // Check that the product belongs to the logged-in seller
+        const productResult = await pool.query(
+            `SELECT product_id, discount_id
+             FROM product
+             WHERE product_id = $1
+               AND seller_id = $2`,
+            [productId, sellerId]
+        );
+
+        if (productResult.rows.length === 0) {
+            return res.status(404).json({
+                error: 'Product not found'
+            });
+        }
+
+        // Check whether the product currently has a discount
+        if (productResult.rows[0].discount_id === null) {
+            return res.status(404).json({
+                error: 'Product does not have a discount'
+            });
+        }
+
+        // Remove the discount
+        const result = await pool.query(
+            `UPDATE product
+             SET discount_id = NULL
+             WHERE product_id = $1
+               AND seller_id = $2
+             RETURNING product_id, discount_id`,
+            [productId, sellerId]
+        );
+
+        return res.status(200).json({
+            message: 'Discount removed from product successfully',
+            product: result.rows[0]
+        });
+
+    } catch (err) {
+        console.error(err);
+
+        return res.status(500).json({
+            error: 'Database error'
+        });
+    }
+};
+
 module.exports = {
     getProducts,
     getProductById,
@@ -648,5 +705,6 @@ module.exports = {
     updateProduct,
     addProductCategory,
     removeProductCategory,
-    assignProductDiscount
+    assignProductDiscount,
+    removeProductDiscount
 }
