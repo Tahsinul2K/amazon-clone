@@ -8,6 +8,15 @@ const getProducts = async (req, res) => {
             SELECT
                 p.*,
 
+                calculate_effective_price(
+                    p.price,
+                    d.discount_type,
+                    d.discount_value,
+                    d.start_date,
+                    d.end_date,
+                    d.is_active
+                ) AS effective_price,
+
                 (
                     SELECT COUNT(*)
                     FROM product_unit pu
@@ -49,6 +58,8 @@ const getProducts = async (req, res) => {
                 ) AS categories
 
             FROM product p
+            LEFT JOIN discount d
+            ON d.discount_id = p.discount_id
             ORDER BY p.product_id;
         `);
 
@@ -72,6 +83,16 @@ const getProductById = async (req, res) => {
         const result = await pool.query(`
             SELECT
                 p.*,
+
+                calculate_effective_price(
+                    p.price,
+                    d.discount_type,
+                    d.discount_value,
+                    d.start_date,
+                    d.end_date,
+                    d.is_active
+                ) AS effective_price,
+
                 (
                     SELECT COUNT(*)
                     FROM product_unit pu
@@ -110,6 +131,8 @@ const getProductById = async (req, res) => {
                     '[]'::json
                 ) AS categories
             FROM product p
+            LEFT JOIN discount d
+            ON d.discount_id = p.discount_id
             WHERE p.product_id = $1;
         `, [productId]);
 
@@ -147,6 +170,14 @@ const getProductsByCategory = async (req, res) => {
         const result = await pool.query(`
             SELECT
                 p.*,
+                calculate_effective_price(
+                    p.price,
+                    d.discount_type,
+                    d.discount_value,
+                    d.start_date,
+                    d.end_date,
+                    d.is_active
+                ) AS effective_price,
                 (
                     SELECT COUNT(*)
                     FROM product_unit pu
@@ -185,6 +216,8 @@ const getProductsByCategory = async (req, res) => {
                     '[]'::json
                 ) AS categories
             FROM product p
+            LEFT JOIN discount d
+            ON d.discount_id = p.discount_id
             WHERE EXISTS (
                 SELECT 1
                 FROM product_category pc
@@ -209,6 +242,14 @@ const getProductsBySellerId = async (req, res) => {
         const result = await pool.query(`
             SELECT
                 p.*,
+                calculate_effective_price(
+                    p.price,
+                    d.discount_type,
+                    d.discount_value,
+                    d.start_date,
+                    d.end_date,
+                    d.is_active
+                ) AS effective_price,
                 (
                     SELECT COUNT(*)
                     FROM product_unit pu
@@ -247,6 +288,8 @@ const getProductsBySellerId = async (req, res) => {
                     '[]'::json
                 ) AS categories
             FROM product p
+            LEFT JOIN discount d
+            ON d.discount_id = p.discount_id
             WHERE p.seller_id = $1
             ORDER BY p.product_id;
         `, [sellerId]);
