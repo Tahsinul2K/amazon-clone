@@ -176,7 +176,15 @@ const getCart = async (req, res) => {
             P.PRODUCT_ID,
             P.PRODUCT_NAME,
             P.PRODUCT_DESCRIPTION,
-            P.PRICE
+            P.PRICE,
+            calculate_effective_price(
+                P.PRICE,
+                D.DISCOUNT_TYPE,
+                D.DISCOUNT_VALUE,
+                D.START_DATE,
+                D.END_DATE,
+                D.IS_ACTIVE
+            ) AS EFFECTIVE_PRICE
         FROM CART C
         JOIN CART_ITEM I
             ON C.CART_ID = I.CART_ID
@@ -184,6 +192,8 @@ const getCart = async (req, res) => {
             ON I.UNIT_ID = PU.UNIT_ID
         JOIN PRODUCT P
             ON PU.PRODUCT_ID = P.PRODUCT_ID
+        LEFT JOIN DISCOUNT D
+            ON D.DISCOUNT_ID = P.DISCOUNT_ID
         WHERE C.BUYER_ID = $1
         AND C.STATUS = 'active'
         `, [buyerID]);
