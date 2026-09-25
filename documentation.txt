@@ -441,3 +441,16 @@ expected json body: (if a one or more parameters are missing, then the endpoint 
   "startDate": "2026-09-24T00:00:00Z",
   "endDate": "2026-10-01T00:00:00Z"
 }
+
+-----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------
+10. Delivery boy
+
+# get all delivery boys
+  url               : /api/admin/delivery-boys
+  method            : GET
+  description       : returns all delivery boys. Requires admin authentication
+  expected json body: none
+
+# make a delivery boy
+  
