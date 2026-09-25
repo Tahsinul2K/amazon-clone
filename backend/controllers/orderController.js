@@ -134,13 +134,16 @@ const completeOrder = async (req, res) => {
             WHERE ORDER_ID = $1
         `, [orderId]);
 
-        // Mark the COD payment as paid
+        const transactionId = `TXN-${orderId}_${payment.payment_id}`;
+
+        // Mark the COD payment as paid and record transaction_id
         await client.query(`
             UPDATE PAYMENT
             SET PAYMENT_STATUS = 'paid',
-            PAID_AT = CURRENT_TIMESTAMP
-            WHERE PAYMENT_ID = $1
-        `, [payment.payment_id]);
+                TRANSACTION_ID = $1,
+                PAID_AT = CURRENT_TIMESTAMP
+            WHERE PAYMENT_ID = $2
+        `, [transactionId, payment.payment_id]);
 
         // Make the delivery boy available
         await client.query(`
@@ -161,6 +164,7 @@ const completeOrder = async (req, res) => {
 
         res.status(200).json({
             message: 'Order marked as delivered',
+            transactionId: transactionId,
             reassignedOrderId: assignedOrderId
         });
 
@@ -399,7 +403,7 @@ const postOrders = async (req, res) => {
     }
 };
 
-// GET /api/orders
+// GET /api/orders (for buyer)
 const getOrders = async (req, res) => {
     try {
         const buyerId = req.session.buyerId;
@@ -414,6 +418,7 @@ const getOrders = async (req, res) => {
                 O.COMPLETED_AT,
                 P.PAYMENT_METHOD,
                 P.PAYMENT_STATUS,
+                P.TRANSACTION_ID,
                 P.AMOUNT AS TOTAL_AMOUNT
             FROM ORDERS O
             LEFT JOIN PAYMENT P
@@ -456,6 +461,7 @@ const getOrderById = async (req, res) => {
                 O.COMPLETED_AT,
                 P.PAYMENT_METHOD,
                 P.PAYMENT_STATUS,
+                P.TRANSACTION_ID,
                 P.AMOUNT AS TOTAL_AMOUNT
             FROM ORDERS O
             LEFT JOIN PAYMENT P
@@ -501,9 +507,75 @@ const getOrderById = async (req, res) => {
     }
 };
 
+// GET /api/admin/orders (Optionally filter by ?status=pending|shipped|...)
+const getAdminOrders = async (req, res) => {
+    try {
+        const { status } = req.query;
+        const validStatuses = [
+            'pending',
+            'confirmed',
+            'shipped',
+            'delivered',
+            'cancelled',
+            'returned'
+        ];
+
+        let query = `
+            SELECT
+                O.ORDER_ID,
+                O.BUYER_ID,
+                O.ADDRESS_ID,
+                O.DELIVERY_BOY_ID,
+                DB.FULL_NAME AS DELIVERY_BOY_NAME,
+                DB.PHONE_NUMBER AS DELIVERY_BOY_PHONE,
+                O.STATUS,
+                O.RECEIVER_NAME,
+                O.RECEIVER_PHONE_NUMBER,
+                O.CREATED_AT,
+                O.COMPLETED_AT,
+                P.PAYMENT_METHOD,
+                P.TRANSACTION_ID,
+                P.PAYMENT_STATUS,
+                P.AMOUNT AS TOTAL_AMOUNT
+            FROM ORDERS O
+            LEFT JOIN PAYMENT P
+                ON P.ORDER_ID = O.ORDER_ID
+            LEFT JOIN DELIVERY_BOY DB
+                ON DB.DELIVERY_BOY_ID = O.DELIVERY_BOY_ID
+        `;
+        const params = [];
+
+        if (status) {
+            const formattedStatus = status.toLowerCase();
+            if (!validStatuses.includes(formattedStatus)) {
+                return res.status(400).json({
+                    error: `Invalid status. Allowed values: ${validStatuses.join(', ')}`
+                });
+            }
+            query += ` WHERE LOWER(O.STATUS) = $1`;
+            params.push(formattedStatus);
+        }
+
+        query += ` ORDER BY O.CREATED_AT DESC`;
+
+        const result = await pool.query(query, params);
+
+        return res.status(200).json({
+            orders: result.rows
+        });
+
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({
+            error: 'Database error'
+        });
+    }
+};
+
 module.exports = {
     postOrders,
     completeOrder,
     getOrders,
-    getOrderById
+    getOrderById,
+    getAdminOrders
 }

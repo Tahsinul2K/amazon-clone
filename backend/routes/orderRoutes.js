@@ -19,4 +19,10 @@ router.get(
     orderController.getOrderById
 );
 
+router.get(
+    '/admin/orders',
+    auth.requiresAdminAuth,
+    orderController.getAdminOrders
+);
+
 module.exports = router;
