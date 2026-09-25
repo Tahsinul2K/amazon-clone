@@ -1,6 +1,9 @@
 const pool = require('../db');
+const { assignWaitingOrderToDeliveryBoy } = require('./orderController');
 
 const postDeliveryBoy = async (req, res) => {
+    const client = await pool.connect();
+
     try {
         const { fullName, phoneNumber, email } = req.body;
 
@@ -10,18 +13,39 @@ const postDeliveryBoy = async (req, res) => {
             });
         }
 
-        const result = await pool.query(`
+        await client.query('BEGIN');
+
+        // 1. Insert the new delivery boy using client
+        const result = await client.query(`
             INSERT INTO DELIVERY_BOY (FULL_NAME, PHONE_NUMBER, EMAIL)
             VALUES ($1, $2, $3)
             RETURNING DELIVERY_BOY_ID, FULL_NAME, PHONE_NUMBER, EMAIL, STATUS
         `, [fullName, phoneNumber, email || null]);
 
-        res.status(201).json({
-            message: 'Delivery boy added successfully',
-            deliveryBoy: result.rows[0]
+        const newDeliveryBoy = result.rows[0];
+
+        // 2. Immediately assign the oldest pending order (if any)
+        const assignedOrderId = await assignWaitingOrderToDeliveryBoy(
+            client,
+            newDeliveryBoy.delivery_boy_id
+        );
+
+        if (assignedOrderId) {
+            newDeliveryBoy.status = 'assigned';
+        }
+
+        await client.query('COMMIT');
+
+        return res.status(201).json({
+            message: assignedOrderId
+                ? `Delivery boy added and automatically assigned to order #${assignedOrderId}`
+                : 'Delivery boy added successfully',
+            assignedOrderId: assignedOrderId || null,
+            deliveryBoy: newDeliveryBoy
         });
 
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error(err);
 
         if (err.code === '23505') {
@@ -38,9 +62,11 @@ const postDeliveryBoy = async (req, res) => {
             }
         }
 
-        res.status(500).json({
+        return res.status(500).json({
             error: 'Database error'
         });
+    } finally {
+        client.release();
     }
 };
 

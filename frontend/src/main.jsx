@@ -40,6 +40,12 @@ const api = {
   assignProductDiscount: (productId, discountId) => request(`/products/${productId}/discount`, { method: 'PUT', body: JSON.stringify({ discountId }) }),
   removeProductDiscount: (productId) => request(`/products/${productId}/discount`, { method: 'DELETE' }),
   orders: () => request('/orders'),
+  adminOrders: (status = '') => request(status ? `/admin/orders?status=${encodeURIComponent(status)}` : '/admin/orders'),
+  completeAdminOrder: (orderId) => request(`/admin/orders/${orderId}/complete`, { method: 'POST' }),
+  updateAdminOrderStatus: (orderId, status) => request(`/admin/orders/${orderId}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
+    deliveryBoys: () => request('/admin/delivery-boys'),
+  createDeliveryBoy: (body) => request('/admin/delivery-boys', { method: 'POST', body: JSON.stringify(body) }),
+  deleteDeliveryBoy: (id) => request(`/admin/delivery-boys/${id}`, { method: 'DELETE' }),
   placeOrder: (body) => request('/orders', { method: 'POST', body: JSON.stringify(body) }),
   cart: () => request('/cart'),
   addToCart: (productId, quantity) => request('/cart/items', { method: 'POST', body: JSON.stringify({ productId, quantity }) }),
@@ -238,18 +244,661 @@ function Seller() { const [form, setForm] = useState({ name: '', description: ''
 
 function AdminLogin() { const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(''); const { login } = useAuth(); const navigate = useNavigate(); const submit = async (event) => { event.preventDefault(); try { await login('admin', { email, password }); navigate('/admin'); } catch (e) { setError(e.message); } }; return <main className="auth-page"><section className="auth-card admin-card"><p className="eyebrow">Operations</p><h1>Admin sign in</h1><form onSubmit={submit}><label>Email<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></label><label>Password<input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} /></label>{error && <p className="error">{error}</p>}<button>Enter control room</button></form></section></main>; }
 function DiscountManager() {
-  const empty = { discountName: '', discountType: 'percentage', discountValue: '', startDate: '', endDate: '', isActive: true };
-  const [discounts, setDiscounts] = useState([]); const [form, setForm] = useState(empty); const [editing, setEditing] = useState(null); const [error, setError] = useState(''); const [message, setMessage] = useState('');
-  const load = () => api.discounts().then((result) => setDiscounts(result.discounts || [])).catch((e) => setError(e.message));
-  useEffect(() => { load(); }, []);
-  const dateValue = (value) => value ? new Date(value).toISOString().slice(0, 16) : '';
-  const edit = (discount) => { setEditing(discount.discount_id); setForm({ discountName: discount.discount_name, discountType: discount.discount_type, discountValue: discount.discount_value, startDate: dateValue(discount.start_date), endDate: dateValue(discount.end_date), isActive: discount.is_active }); setMessage(''); setError(''); };
-  const submit = async (event) => { event.preventDefault(); setError(''); setMessage(''); try { const body = { ...form, discountValue: Number(form.discountValue), isActive: Boolean(form.isActive) }; const result = editing ? await api.updateDiscount(editing, body) : await api.createDiscount(body); setMessage(result.message); setForm(empty); setEditing(null); await load(); } catch (e) { setError(e.message); } };
-  const remove = async (id) => { setError(''); try { const result = await api.deleteDiscount(id); setMessage(result.message); if (editing === id) { setEditing(null); setForm(empty); } await load(); } catch (e) { setError(e.message); } };
-  return <section className="dashboard-panel discount-manager"><div className="section-heading"><div><p className="eyebrow">Pricing control</p><h2>{editing ? 'Edit discount' : 'Create discount'}</h2></div>{editing && <button type="button" className="small-button" onClick={() => { setEditing(null); setForm(empty); }}>Cancel</button>}</div><form className="compact-form" onSubmit={submit}><input required placeholder="Discount name" value={form.discountName} onChange={(e) => setForm({ ...form, discountName: e.target.value })} /><div className="form-grid"><label>Type<select value={form.discountType} onChange={(e) => setForm({ ...form, discountType: e.target.value })}><option value="percentage">Percentage</option><option value="fixed_amount">Fixed amount</option></select></label><label>Value<input required type="number" min="0.01" step="0.01" value={form.discountValue} onChange={(e) => setForm({ ...form, discountValue: e.target.value })} /></label></div><div className="form-grid"><label>Starts<input required type="datetime-local" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></label><label>Ends<input required type="datetime-local" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></label></div>{editing && <label className="check-label"><input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> Active discount</label>}<button>{editing ? 'Save discount' : 'Create discount'}</button></form>{error && <p className="error" role="alert">{error}</p>}{message && <p className="success">{message}</p>}<div className="discount-list">{discounts.length ? discounts.map((discount) => <article className="discount-row" key={discount.discount_id}><div><strong>{discount.discount_name}</strong><p>{discount.discount_type === 'percentage' ? `${discount.discount_value}% off` : `${money(discount.discount_value)} off`} · {discount.is_active ? 'Active' : 'Inactive'}</p></div><div className="form-actions"><button className="small-button" onClick={() => edit(discount)}>Edit</button><button className="small-button danger-button" onClick={() => remove(discount.discount_id)}>Delete</button></div></article>) : <p className="muted">No discounts created yet.</p>}</div></section>;
-}
-function Admin() { return <Guard role="admin"><main><section className="dashboard-hero admin-hero"><p className="eyebrow">Admin dashboard</p><h1>Marketplace operations.</h1><p className="muted">Create and maintain the discounts sellers can apply to their products.</p></section><div className="dashboard-grid"><DiscountManager /><section className="dashboard-panel"><p className="eyebrow">System status</p><h2>Authentication active</h2><p className="muted">Discount changes are protected by the admin session and appear in product prices when active.</p><span className="status-pill green">Connected</span></section></div></main></Guard>; }
+  const empty = {
+    discountName: '',
+    discountType: 'percentage',
+    discountValue: '',
+    startDate: '',
+    endDate: '',
+    isActive: true
+  };
+  const [discounts, setDiscounts] = useState([]);
+  const [form, setForm] = useState(empty);
+  const [editing, setEditing] = useState(null);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
 
+  const load = () =>
+    api.discounts()
+      .then((result) => setDiscounts(result.discounts || []))
+      .catch((e) => setError(e.message));
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const dateValue = (value) =>
+    value ? new Date(value).toISOString().slice(0, 16) : '';
+
+  const edit = (discount) => {
+    setEditing(discount.discount_id);
+    setForm({
+      discountName: discount.discount_name,
+      discountType: discount.discount_type,
+      discountValue: discount.discount_value,
+      startDate: dateValue(discount.start_date),
+      endDate: dateValue(discount.end_date),
+      isActive: discount.is_active
+    });
+    setMessage('');
+    setError('');
+  };
+
+  const cancelEdit = () => {
+    setEditing(null);
+    setForm(empty);
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setError('');
+    setMessage('');
+    try {
+      const body = {
+        ...form,
+        discountValue: Number(form.discountValue),
+        isActive: Boolean(form.isActive)
+      };
+      const result = editing
+        ? await api.updateDiscount(editing, body)
+        : await api.createDiscount(body);
+      setMessage(result.message);
+      setForm(empty);
+      setEditing(null);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const remove = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this discount?')) return;
+    setError('');
+    try {
+      const result = await api.deleteDiscount(id);
+      setMessage(result.message);
+      if (editing === id) {
+        setEditing(null);
+        setForm(empty);
+      }
+      await load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  return (
+    <section className="dashboard-panel discount-manager">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Pricing control</p>
+          <h2>{editing ? 'Edit discount' : 'Create discount'}</h2>
+        </div>
+        {editing && (
+          <button type="button" className="small-button" onClick={cancelEdit}>
+            Cancel
+          </button>
+        )}
+      </div>
+
+      <form className="compact-form" onSubmit={submit} style={{ display: 'grid', gap: '14px' }}>
+        <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#536168' }}>
+          Discount name
+          <input
+            required
+            placeholder="e.g. Summer Special"
+            value={form.discountName}
+            onChange={(e) => setForm({ ...form, discountName: e.target.value })}
+            style={{
+              width: '100%',
+              padding: '9px 12px',
+              marginTop: '5px',
+              boxSizing: 'border-box',
+              border: '1px solid #bfc8ca',
+              borderRadius: '4px',
+              font: 'inherit'
+            }}
+          />
+        </label>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#536168' }}>
+            Type
+            <select
+              value={form.discountType}
+              onChange={(e) => setForm({ ...form, discountType: e.target.value })}
+              style={{
+                width: '100%',
+                height: '39px',
+                padding: '8px 12px',
+                marginTop: '5px',
+                boxSizing: 'border-box',
+                border: '1px solid #bfc8ca',
+                borderRadius: '4px',
+                background: '#fff',
+                font: 'inherit'
+              }}
+            >
+              <option value="percentage">Percentage (%)</option>
+              <option value="fixed_amount">Fixed amount ($)</option>
+            </select>
+          </label>
+
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#536168' }}>
+            Value {form.discountType === 'percentage' ? '(%)' : '($)'}
+            <input
+              required
+              type="number"
+              min="0.01"
+              step="0.01"
+              placeholder={form.discountType === 'percentage' ? 'e.g. 15' : 'e.g. 10.00'}
+              value={form.discountValue}
+              onChange={(e) => setForm({ ...form, discountValue: e.target.value })}
+              style={{
+                width: '100%',
+                padding: '9px 12px',
+                marginTop: '5px',
+                boxSizing: 'border-box',
+                border: '1px solid #bfc8ca',
+                borderRadius: '4px',
+                font: 'inherit'
+              }}
+            />
+          </label>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#536168' }}>
+            Starts
+            <input
+              required
+              type="datetime-local"
+              value={form.startDate}
+              onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                marginTop: '5px',
+                boxSizing: 'border-box',
+                border: '1px solid #bfc8ca',
+                borderRadius: '4px',
+                font: 'inherit'
+              }}
+            />
+          </label>
+
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#536168' }}>
+            Ends
+            <input
+              required
+              type="datetime-local"
+              value={form.endDate}
+              onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                marginTop: '5px',
+                boxSizing: 'border-box',
+                border: '1px solid #bfc8ca',
+                borderRadius: '4px',
+                font: 'inherit'
+              }}
+            />
+          </label>
+        </div>
+
+        {editing && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: '#536168' }}>
+            <input
+              type="checkbox"
+              checked={form.isActive}
+              onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
+              style={{ width: 'auto', margin: 0 }}
+            />
+            Active discount
+          </label>
+        )}
+
+        <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+          <button
+            type="submit"
+            style={{
+              padding: '10px 18px',
+              backgroundColor: '#e9a523',
+              color: '#192731',
+              border: 0,
+              borderRadius: '4px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              flex: editing ? '1' : 'none'
+            }}
+          >
+            {editing ? 'Save discount' : 'Create discount'}
+          </button>
+          {editing && (
+            <button
+              type="button"
+              className="small-button secondary-button"
+              onClick={cancelEdit}
+              style={{ padding: '10px 16px', borderRadius: '4px' }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </form>
+
+      {error && <p className="error" role="alert" style={{ marginTop: '12px' }}>{error}</p>}
+      {message && <p className="success" style={{ marginTop: '12px' }}>{message}</p>}
+
+      <div className="discount-list" style={{ marginTop: '20px', display: 'grid', gap: '10px' }}>
+        {discounts.length ? (
+          discounts.map((discount) => (
+            <article
+              className="discount-row"
+              key={discount.discount_id}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '12px',
+                padding: '12px 14px',
+                border: '1px solid #ddd9d0',
+                borderRadius: '4px'
+              }}
+            >
+              <div>
+                <strong style={{ fontSize: '15px' }}>{discount.discount_name}</strong>
+                <p style={{ margin: '4px 0 0', color: '#69757c', fontSize: '13px' }}>
+                  {discount.discount_type === 'percentage'
+                    ? `${discount.discount_value}% off`
+                    : `${money(discount.discount_value)} off`}{' '}
+                  ·{' '}
+                  <span className={`status-pill ${discount.is_active ? 'green' : ''}`}>
+                    {discount.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                </p>
+              </div>
+              <div className="form-actions" style={{ display: 'flex', gap: '8px', margin: 0 }}>
+                <button
+                  type="button"
+                  className="small-button"
+                  onClick={() => edit(discount)}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className="small-button danger-button"
+                  onClick={() => remove(discount.discount_id)}
+                >
+                  Delete
+                </button>
+              </div>
+            </article>
+          ))
+        ) : (
+          <p className="muted">No discounts created yet.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+function DeliveryBoyManager() {
+  const empty = { fullName: '', phoneNumber: '', email: '' };
+  const [deliveryBoys, setDeliveryBoys] = useState([]);
+  const [form, setForm] = useState(empty);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    api.deliveryBoys()
+      .then((res) => setDeliveryBoys(res.deliveryBoys || []))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setError('');
+    setMessage('');
+    setSubmitting(true);
+    try {
+      const res = await api.createDeliveryBoy(form);
+      setMessage(res.message || 'Delivery personnel added successfully.');
+      setForm(empty);
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const remove = async (id, name, status) => {
+    if (status === 'assigned') {
+      alert('Cannot delete delivery personnel who is currently assigned to an active order.');
+      return;
+    }
+    if (!window.confirm(`Delete delivery personnel "${name}" (ID #${id})?`)) return;
+    setError('');
+    setMessage('');
+    try {
+      const res = await api.deleteDeliveryBoy(id);
+      setMessage(res.message || 'Delivery personnel deleted successfully.');
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  return (
+    <section className="dashboard-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Logistics</p>
+          <h2>Delivery personnel ({deliveryBoys.length})</h2>
+        </div>
+        <button className="small-button" onClick={load} disabled={loading}>
+          {loading ? 'Refreshing...' : 'Refresh'}
+        </button>
+      </div>
+
+      <form className="compact-form" onSubmit={submit} style={{ marginBottom: '20px' }}>
+        <input
+          required
+          placeholder="Full name (e.g. John Doe)"
+          value={form.fullName}
+          onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+        />
+        <div className="form-grid">
+          <input
+            required
+            placeholder="Phone number"
+            value={form.phoneNumber}
+            onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
+          />
+          <input
+            type="email"
+            placeholder="Email (optional)"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+          />
+        </div>
+        <button disabled={submitting}>
+          {submitting ? 'Adding...' : 'Add delivery personnel'}
+        </button>
+      </form>
+
+      {error && <p className="error" role="alert">{error}</p>}
+      {message && <p className="success">{message}</p>}
+
+      <div style={{ display: 'grid', gap: '10px', marginTop: '16px' }}>
+        {loading && !deliveryBoys.length ? (
+          <p className="muted">Loading delivery personnel...</p>
+        ) : !deliveryBoys.length ? (
+          <p className="muted">No delivery personnel added yet.</p>
+        ) : (
+          deliveryBoys.map((boy) => {
+            const isAssigned = boy.status === 'assigned';
+            return (
+              <article
+                key={boy.delivery_boy_id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '12px',
+                  border: '1px solid #ddd9d0',
+                  borderRadius: '4px',
+                  gap: '12px'
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <strong>{boy.full_name}</strong>
+                    <span className={`status-pill ${boy.status === 'available' ? 'green' : ''}`}>
+                      {boy.status}
+                    </span>
+                  </div>
+                  <p style={{ margin: '4px 0 0', color: '#69757c', fontSize: '13px' }}>
+                    ID: #{boy.delivery_boy_id} · Phone: {boy.phone_number} {boy.email ? `· Email: ${boy.email}` : ''}
+                  </p>
+                </div>
+                <div>
+                  <button
+                    className="small-button danger-button"
+                    onClick={() => remove(boy.delivery_boy_id, boy.full_name, boy.status)}
+                    disabled={isAssigned}
+                    title={isAssigned ? 'Cannot delete while assigned to an active order' : 'Delete delivery personnel'}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </article>
+            );
+          })
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AdminOrderManager() {
+  const [orders, setOrders] = useState([]);
+  const [filter, setFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [actionLoading, setActionLoading] = useState(null);
+
+  const loadOrders = (status = filter) => {
+    setLoading(true);
+    setError('');
+    api.adminOrders(status)
+      .then((res) => setOrders(res.orders || []))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadOrders(filter);
+  }, [filter]);
+
+  const handleComplete = async (orderId) => {
+    if (!window.confirm(`Mark order #${orderId} as delivered & completed?`)) return;
+    setActionLoading(orderId);
+    setError('');
+    setMessage('');
+    try {
+      const res = await api.completeAdminOrder(orderId);
+      setMessage(
+        res.transactionId
+          ? `${res.message || `Order #${orderId} completed.`} (Transaction ID: ${res.transactionId})`
+          : res.message || `Order #${orderId} marked as completed.`
+      );
+      loadOrders();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleStatusChange = async (orderId, targetStatus) => {
+    if (!window.confirm(`Are you sure you want to mark order #${orderId} as ${targetStatus}?`)) return;
+    setActionLoading(orderId);
+    setError('');
+    setMessage('');
+    try {
+      const res = await api.updateAdminOrderStatus(orderId, targetStatus);
+      setMessage(res.message || `Order #${orderId} marked as ${targetStatus}.`);
+      loadOrders();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const formatDate = (val) => {
+    if (!val) return '—';
+    const d = new Date(val);
+    return Number.isNaN(d.getTime()) ? val : d.toLocaleString();
+  };
+
+  return (
+    <section className="dashboard-panel" style={{ marginBottom: '24px' }}>
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Fulfillment control</p>
+          <h2>Customer orders ({orders.length})</h2>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <label style={{ font: '700 12px Arial, sans-serif', color: '#536168' }}>
+            Filter by status:
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              style={{ marginLeft: '8px', padding: '6px 10px', borderRadius: '3px', border: '1px solid #bfc8ca' }}
+            >
+              <option value="">All orders</option>
+              <option value="pending">Pending</option>
+              <option value="shipped">Shipped</option>
+              <option value="delivered">Delivered</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="returned">Returned</option>
+            </select>
+          </label>
+          <button className="small-button" onClick={() => loadOrders(filter)} disabled={loading}>
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+      </div>
+
+      {error && <p className="error" role="alert">{error}</p>}
+      {message && <p className="success">{message}</p>}
+
+      {loading && !orders.length ? (
+        <p className="muted">Loading orders...</p>
+      ) : !orders.length ? (
+        <p className="muted">No orders found matching the selected filter.</p>
+      ) : (
+        <div className="order-list" style={{ display: 'grid', gap: '14px' }}>
+          {orders.map((order) => {
+            const isBusy = actionLoading === order.order_id;
+            const canComplete = order.status === 'shipped';
+            const canCancel = order.status === 'pending' || order.status === 'shipped';
+            const canReturn = order.status === 'delivered';
+
+            return (
+              <article className="order-card" key={order.order_id}>
+                <div className="order-card-heading">
+                  <strong>Order #{order.order_id}</strong>
+                  <span className={`status-pill ${order.status === 'delivered' ? 'green' : ''}`}>
+                    {order.status}
+                  </span>
+                  <small>Placed: {formatDate(order.created_at)}</small>
+                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px', margin: '10px 0', fontSize: '13px' }}>
+                  <div>
+                    <strong>Receiver:</strong> {order.receiver_name} ({order.receiver_phone_number})
+                  </div>
+                  <div>
+                    <strong>Delivery Personnel:</strong>{' '}
+                    {order.delivery_boy_name ? (
+                      <span>{order.delivery_boy_name} ({order.delivery_boy_phone})</span>
+                    ) : (
+                      <span className="muted">Unassigned</span>
+                    )}
+                  </div>
+                  <div>
+                    <strong>Payment:</strong> {order.payment_method || 'COD'} ·{' '}
+                    <span className="muted">{order.payment_status || 'pending'}</span>
+                  </div>
+                  <div>
+                    <strong>Transaction ID:</strong>{' '}
+                    {order.transaction_id ? (
+                      <code>{order.transaction_id}</code>
+                    ) : (
+                      <span className="muted">None</span>
+                    )}
+                  </div>
+                  <div>
+                    <strong>Total Amount:</strong> {money(order.total_amount || 0)}
+                  </div>
+                </div>
+
+                <div className="form-actions" style={{ marginTop: '12px', borderTop: '1px solid #f0ede6', paddingTop: '10px' }}>
+                  {canComplete && (
+                    <button
+                      className="small-button"
+                      style={{ background: '#e9a523', fontWeight: 'bold' }}
+                      onClick={() => handleComplete(order.order_id)}
+                      disabled={isBusy}
+                    >
+                      {isBusy ? 'Processing...' : 'Mark as completed'}
+                    </button>
+                  )}
+                  {canCancel && (
+                    <button
+                      className="small-button danger-button"
+                      onClick={() => handleStatusChange(order.order_id, 'cancelled')}
+                      disabled={isBusy}
+                    >
+                      Cancel order
+                    </button>
+                  )}
+                  {canReturn && (
+                    <button
+                      className="small-button danger-button"
+                      onClick={() => handleStatusChange(order.order_id, 'returned')}
+                      disabled={isBusy}
+                    >
+                      Mark as returned
+                    </button>
+                  )}
+                  {!canComplete && !canCancel && !canReturn && (
+                    <span className="muted" style={{ fontSize: '12px' }}>No further actions available for this status.</span>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+function Admin() {
+  return (
+    <Guard role="admin">
+      <main>
+        <section className="dashboard-hero admin-hero">
+          <p className="eyebrow">Admin dashboard</p>
+          <h1>Marketplace operations.</h1>
+          <p className="muted">Manage order fulfillment, delivery personnel, and marketplace discounts.</p>
+        </section>
+
+        <AdminOrderManager />
+
+        <div className="dashboard-grid">
+          <DeliveryBoyManager />
+          <DiscountManager />
+        </div>
+      </main>
+    </Guard>
+  );
+}
 function CompactAddressBook() {
   const [addresses, setAddresses] = useState([]); const [open, setOpen] = useState(false); const [error, setError] = useState('');
   const [form, setForm] = useState({ label: 'Home', street: '', city: '', postalCode: '', country: '', isCurrent: true });

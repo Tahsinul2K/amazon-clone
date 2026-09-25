@@ -1,6 +1,5 @@
 const pool = require('../db');
 
-
 // to do: add get order and payment handling and delivery handling
 
 // helper function of completeOrder, assigns the oldest pending order to an available delivery.
@@ -717,5 +716,6 @@ module.exports = {
     getOrders,
     getOrderById,
     getAdminOrders,
-    updateOrderStatus
+    updateOrderStatus,
+    assignWaitingOrderToDeliveryBoy
 }
