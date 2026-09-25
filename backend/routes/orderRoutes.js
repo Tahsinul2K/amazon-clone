@@ -25,4 +25,10 @@ router.get(
     orderController.getAdminOrders
 );
 
+router.put(
+    '/admin/orders/:orderId/status',
+    auth.requiresAdminAuth,
+    orderController.updateOrderStatus
+);
+
 module.exports = router;

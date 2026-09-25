@@ -246,6 +246,14 @@ Base URL: http://localhost:5000
   query parameters  : status (optional: pending, confirmed, shipped, delivered, cancelled, returned)
   expected json body: none
 
+# update order status (cancel or return)
+  url               : /api/admin/orders/:orderId/status
+  method            : PUT
+  description       : updates an order's status to 'cancelled' or 'returned'. Restores product stock and frees delivery personnel if applicable. Requires admin authentication
+  expected json body:
+  {
+    "status": "cancelled"   // or "returned"
+  }
 
 -----------------------------------------------------------------------------------------
 -----------------------------------------------------------------------------------------
