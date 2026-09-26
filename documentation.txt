@@ -205,7 +205,7 @@ Base URL: http://localhost:5000
 -----------------------------------------------------------------------------------------
 
 
-4. Placing an order
+4. Order Endpoints
 
 # place an order
   url		            : /api/orders
@@ -239,7 +239,21 @@ Base URL: http://localhost:5000
   description       : returns one order belonging to the logged-in buyer, with items. Requires buyer authentication.
   expected json body: none
 
+# get admin orders by status
+  url               : /api/admin/orders
+  method            : GET
+  description       : returns orders, optionally filtered by status (e.g. /api/admin/orders?status=pending). Requires admin authentication
+  query parameters  : status (optional: pending, confirmed, shipped, delivered, cancelled, returned)
+  expected json body: none
 
+# update order status (cancel or return)
+  url               : /api/admin/orders/:orderId/status
+  method            : PUT
+  description       : updates an order's status to 'cancelled' or 'returned'. Restores product stock and frees delivery personnel if applicable. Requires admin authentication
+  expected json body:
+  {
+    "status": "cancelled"   // or "returned"
+  }
 
 -----------------------------------------------------------------------------------------
 -----------------------------------------------------------------------------------------
@@ -441,3 +455,16 @@ expected json body: (if a one or more parameters are missing, then the endpoint 
   "startDate": "2026-09-24T00:00:00Z",
   "endDate": "2026-10-01T00:00:00Z"
 }
+
+-----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------
+10. Delivery boy
+
+# get all delivery boys
+  url               : /api/admin/delivery-boys
+  method            : GET
+  description       : returns all delivery boys. Requires admin authentication
+  expected json body: none
+
+# make a delivery boy
+

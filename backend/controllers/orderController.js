@@ -1,6 +1,5 @@
 const pool = require('../db');
 
-
 // to do: add get order and payment handling and delivery handling
 
 // helper function of completeOrder, assigns the oldest pending order to an available delivery.
@@ -134,13 +133,16 @@ const completeOrder = async (req, res) => {
             WHERE ORDER_ID = $1
         `, [orderId]);
 
-        // Mark the COD payment as paid
+        const transactionId = `TXN-${orderId}_${payment.payment_id}`;
+
+        // Mark the COD payment as paid and record transaction_id
         await client.query(`
             UPDATE PAYMENT
             SET PAYMENT_STATUS = 'paid',
-            PAID_AT = CURRENT_TIMESTAMP
-            WHERE PAYMENT_ID = $1
-        `, [payment.payment_id]);
+                TRANSACTION_ID = $1,
+                PAID_AT = CURRENT_TIMESTAMP
+            WHERE PAYMENT_ID = $2
+        `, [transactionId, payment.payment_id]);
 
         // Make the delivery boy available
         await client.query(`
@@ -161,6 +163,7 @@ const completeOrder = async (req, res) => {
 
         res.status(200).json({
             message: 'Order marked as delivered',
+            transactionId: transactionId,
             reassignedOrderId: assignedOrderId
         });
 
@@ -399,7 +402,7 @@ const postOrders = async (req, res) => {
     }
 };
 
-// GET /api/orders
+// GET /api/orders (for buyer)
 const getOrders = async (req, res) => {
     try {
         const buyerId = req.session.buyerId;
@@ -414,6 +417,7 @@ const getOrders = async (req, res) => {
                 O.COMPLETED_AT,
                 P.PAYMENT_METHOD,
                 P.PAYMENT_STATUS,
+                P.TRANSACTION_ID,
                 P.AMOUNT AS TOTAL_AMOUNT
             FROM ORDERS O
             LEFT JOIN PAYMENT P
@@ -456,6 +460,7 @@ const getOrderById = async (req, res) => {
                 O.COMPLETED_AT,
                 P.PAYMENT_METHOD,
                 P.PAYMENT_STATUS,
+                P.TRANSACTION_ID,
                 P.AMOUNT AS TOTAL_AMOUNT
             FROM ORDERS O
             LEFT JOIN PAYMENT P
@@ -501,9 +506,216 @@ const getOrderById = async (req, res) => {
     }
 };
 
+// GET /api/admin/orders (Optionally filter by ?status=pending|shipped|...)
+const getAdminOrders = async (req, res) => {
+    try {
+        const { status } = req.query;
+        const validStatuses = [
+            'pending',
+            'confirmed',
+            'shipped',
+            'delivered',
+            'cancelled',
+            'returned'
+        ];
+
+        let query = `
+            SELECT
+                O.ORDER_ID,
+                O.BUYER_ID,
+                O.ADDRESS_ID,
+                O.DELIVERY_BOY_ID,
+                DB.FULL_NAME AS DELIVERY_BOY_NAME,
+                DB.PHONE_NUMBER AS DELIVERY_BOY_PHONE,
+                O.STATUS,
+                O.RECEIVER_NAME,
+                O.RECEIVER_PHONE_NUMBER,
+                O.CREATED_AT,
+                O.COMPLETED_AT,
+                P.PAYMENT_METHOD,
+                P.TRANSACTION_ID,
+                P.PAYMENT_STATUS,
+                P.AMOUNT AS TOTAL_AMOUNT
+            FROM ORDERS O
+            LEFT JOIN PAYMENT P
+                ON P.ORDER_ID = O.ORDER_ID
+            LEFT JOIN DELIVERY_BOY DB
+                ON DB.DELIVERY_BOY_ID = O.DELIVERY_BOY_ID
+        `;
+        const params = [];
+
+        if (status) {
+            const formattedStatus = status.toLowerCase();
+            if (!validStatuses.includes(formattedStatus)) {
+                return res.status(400).json({
+                    error: `Invalid status. Allowed values: ${validStatuses.join(', ')}`
+                });
+            }
+            query += ` WHERE LOWER(O.STATUS) = $1`;
+            params.push(formattedStatus);
+        }
+
+        query += ` ORDER BY O.CREATED_AT DESC`;
+
+        const result = await pool.query(query, params);
+
+        return res.status(200).json({
+            orders: result.rows
+        });
+
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({
+            error: 'Database error'
+        });
+    }
+};
+
+// PUT /api/admin/orders/:orderId/status
+const updateOrderStatus = async (req, res) => {
+    const client = await pool.connect();
+
+    try {
+        const orderId = Number(req.params.orderId);
+        const { status } = req.body;
+
+        if (!Number.isInteger(orderId) || orderId <= 0) {
+            return res.status(400).json({
+                error: 'Order ID must be a positive integer'
+            });
+        }
+
+        if (!status || typeof status !== 'string') {
+            return res.status(400).json({
+                error: 'Status is required'
+            });
+        }
+
+        const targetStatus = status.trim().toLowerCase();
+
+        if (targetStatus !== 'cancelled' && targetStatus !== 'returned') {
+            return res.status(400).json({
+                error: "Status must be either 'cancelled' or 'returned'"
+            });
+        }
+
+        await client.query('BEGIN');
+
+        // Fetch the order with row lock
+        const orderResult = await client.query(`
+            SELECT ORDER_ID, DELIVERY_BOY_ID, STATUS
+            FROM ORDERS
+            WHERE ORDER_ID = $1
+            FOR UPDATE
+        `, [orderId]);
+
+        if (orderResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({
+                error: 'Order not found'
+            });
+        }
+
+        const order = orderResult.rows[0];
+
+        // Check if already in the target status
+        if (order.status === targetStatus) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: `Order is already ${targetStatus}`
+            });
+        }
+
+        // Status transition rules
+        if (targetStatus === 'returned') {
+            if (order.status !== 'delivered') {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    error: 'Only delivered orders can be marked as returned'
+                });
+            }
+        }
+
+        if (targetStatus === 'cancelled') {
+            if (order.status === 'delivered') {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    error: 'Delivered orders cannot be cancelled; mark as returned instead'
+                });
+            }
+            if (order.status === 'returned') {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    error: 'Returned orders cannot be cancelled'
+                });
+            }
+        }
+
+        // 1. Update the order status
+        await client.query(`
+            UPDATE ORDERS
+            SET STATUS = $1,
+                COMPLETED_AT = CURRENT_TIMESTAMP
+            WHERE ORDER_ID = $2
+        `, [targetStatus, orderId]);
+
+        // 2. Restore product inventory back to 'available'
+        await client.query(`
+            UPDATE PRODUCT_UNIT
+            SET UNIT_STATUS = 'available'
+            WHERE UNIT_ID IN (
+                SELECT UNIT_ID
+                FROM ORDER_ITEM
+                WHERE ORDER_ID = $1
+            )
+        `, [orderId]);
+
+        // 3. If a shipped order was cancelled, free the assigned delivery boy
+        if (targetStatus === 'cancelled' && order.status === 'shipped' && order.delivery_boy_id) {
+            await client.query(`
+                UPDATE DELIVERY_BOY
+                SET STATUS = 'available'
+                WHERE DELIVERY_BOY_ID = $1
+            `, [order.delivery_boy_id]);
+
+            // Reassign freed delivery boy to any waiting pending order
+            await assignWaitingOrderToDeliveryBoy(client, order.delivery_boy_id);
+        }
+
+        // 4. Update payment status if payment exists
+        await client.query(`
+            UPDATE PAYMENT
+            SET PAYMENT_STATUS = CASE
+                WHEN PAYMENT_STATUS = 'paid' THEN 'refunded'
+                ELSE 'failed'
+            END
+            WHERE ORDER_ID = $1
+        `, [orderId]);
+
+        await client.query('COMMIT');
+
+        return res.status(200).json({
+            message: `Order status updated to ${targetStatus} successfully`,
+            orderId,
+            status: targetStatus
+        });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err);
+        return res.status(500).json({
+            error: 'Database error'
+        });
+    } finally {
+        client.release();
+    }
+};
 module.exports = {
     postOrders,
     completeOrder,
     getOrders,
-    getOrderById
+    getOrderById,
+    getAdminOrders,
+    updateOrderStatus,
+    assignWaitingOrderToDeliveryBoy
 }
