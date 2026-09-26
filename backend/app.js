@@ -14,6 +14,7 @@ const productImageRoutes = require('./routes/productImageRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const discountRoutes = require('./routes/discountRoutes');
 const deliveryBoyRoutes = require('./routes/deliveryboyRoutes');
+const statsRoutes = require('./routes/statsRoutes');
 
 const app = express();
 
@@ -49,6 +50,7 @@ app.use('/api', productImageRoutes);
 app.use('/api', categoryRoutes);
 app.use('/api', discountRoutes);
 app.use('/api', deliveryBoyRoutes);
+app.use('/api', statsRoutes);
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`Server is listening on port ${PORT}`);

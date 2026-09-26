@@ -4,7 +4,8 @@ const pool = require('../db');
 // GET /api/products
 const getProducts = async (req, res) => {
     try {
-        const result = await pool.query(`
+        const { search } = req.query;
+        let query = `
             SELECT
                 p.*,
 
@@ -60,8 +61,17 @@ const getProducts = async (req, res) => {
             FROM product p
             LEFT JOIN discount d
             ON d.discount_id = p.discount_id
-            ORDER BY p.product_id;
-        `);
+        `;
+        
+        const params = [];
+        if (search) {
+            query += ` WHERE p.product_name ILIKE $1 OR p.product_description ILIKE $1`;
+            params.push(`%${search}%`);
+        }
+
+        query += ` ORDER BY p.product_id;`;
+
+        const result = await pool.query(query, params);
 
         res.status(200).json(result.rows);
     } catch (err) {
@@ -151,6 +161,7 @@ const getProductById = async (req, res) => {
 const getProductsByCategory = async (req, res) => {
     try {
         const categoryId = Number(req.params.categoryId);
+        const search = req.query.search?.trim() || '';
 
         if (!Number.isInteger(categoryId) || categoryId <= 0) {
             return res.status(400).json({ error: 'Invalid category ID' });
@@ -167,7 +178,16 @@ const getProductsByCategory = async (req, res) => {
             return res.status(404).json({ error: 'Category not found' });
         }
 
-        const result = await pool.query(`
+                const params = [categoryId];
+                let searchCondition = '';
+
+                if (search) {
+                        searchCondition = `
+                            AND (p.product_name ILIKE $2 OR p.product_description ILIKE $2)`;
+                        params.push(`%${search}%`);
+                }
+
+                const result = await pool.query(`
             SELECT
                 p.*,
                 calculate_effective_price(
@@ -224,8 +244,9 @@ const getProductsByCategory = async (req, res) => {
                 WHERE pc.product_id = p.product_id
                   AND pc.category_id = $1
             )
+            ${searchCondition}
             ORDER BY p.product_id;
-        `, [categoryId]);
+        `, params);
 
         res.status(200).json(result.rows);
     } catch (err) {
@@ -350,16 +371,11 @@ const postProductsCreate = async (req, res) => {
         }
 
         // insert everything into product_unit
-        const values = [];
-        for (let i = 0; i < stock_; i++) {
-            values.push("($1)");
-        }
-
-        if(stock_ > 0) {
-            await client.query(`
-                INSERT INTO PRODUCT_UNIT (PRODUCT_ID)
-                VALUES ${values.join(", ")}
-            `, [productId]);
+        if (stock_ > 0) {
+            await client.query(
+                'CALL create_product_units($1, $2)',
+                [productId, stock_]
+            );
         }
 
         await client.query('COMMIT');

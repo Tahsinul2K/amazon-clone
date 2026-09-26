@@ -97,7 +97,8 @@ Base URL: http://localhost:5000
 # get all products
   url               : /api/products
   method            : GET
-  description       : returns all products in json format
+  description       : returns all products in json format, optionally filtered by product name or description
+  query parameters  : search (optional, e.g. /api/products?search=wireless)
   expected json body: none
 
 
@@ -111,7 +112,8 @@ Base URL: http://localhost:5000
 # get products by category
   url               : /api/products/category/:categoryId
   method            : GET
-  description       : returns all products assigned to that category. Returns 404 if the category does not exist
+  description       : returns all products assigned to that category, optionally filtered by product name or description. Returns 404 if the category does not exist
+  query parameters  : search (optional, e.g. /api/products/category/2?search=wireless)
   expected json body: none
 
 
