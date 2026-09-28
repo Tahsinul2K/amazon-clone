@@ -30,6 +30,9 @@ const api = {
   logout: () => request('/logout', { method: 'POST' }),
   products: (search = '') => request(search ? `/products?search=${encodeURIComponent(search)}` : '/products'),
   categories: () => request('/categories'),
+  createCategory: (body) => request('/categories', { method: 'POST', body: JSON.stringify(body) }),
+  updateCategory: (id, body) => request(`/categories/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteCategory: (id) => request(`/categories/${id}`, { method: 'DELETE' }),
   productsByCategory: (categoryId, search = '') => request(search ? `/products/category/${categoryId}?search=${encodeURIComponent(search)}` : `/products/category/${categoryId}`),
   product: (id) => request(`/products/${id}`),
   sellerProducts: () => request('/seller/products'),
@@ -44,7 +47,7 @@ const api = {
   adminOrders: (status = '') => request(status ? `/admin/orders?status=${encodeURIComponent(status)}` : '/admin/orders'),
   completeAdminOrder: (orderId) => request(`/admin/orders/${orderId}/complete`, { method: 'POST' }),
   updateAdminOrderStatus: (orderId, status) => request(`/admin/orders/${orderId}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
-    deliveryBoys: () => request('/admin/delivery-boys'),
+  deliveryBoys: () => request('/admin/delivery-boys'),
   createDeliveryBoy: (body) => request('/admin/delivery-boys', { method: 'POST', body: JSON.stringify(body) }),
   deleteDeliveryBoy: (id) => request(`/admin/delivery-boys/${id}`, { method: 'DELETE' }),
   placeOrder: (body) => request('/orders', { method: 'POST', body: JSON.stringify(body) }),
@@ -549,6 +552,245 @@ function DiscountManager() {
     </section>
   );
 }
+
+function CategoryManager() {
+  const empty = { categoryName: '', parentCategoryId: '' };
+  const [categories, setCategories] = useState([]);
+  const [form, setForm] = useState(empty);
+  const [editing, setEditing] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+
+  const load = () => {
+    setLoading(true);
+    api.categories()
+      .then((res) => setCategories(res.categories || []))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setError('');
+    setMessage('');
+    setSubmitting(true);
+    try {
+      const body = {
+        categoryName: form.categoryName.trim(),
+        parentCategoryId: form.parentCategoryId ? Number(form.parentCategoryId) : null
+      };
+      const res = editing
+        ? await api.updateCategory(editing, body)
+        : await api.createCategory(body);
+      setMessage(res.message || (editing ? 'Category updated.' : 'Category created.'));
+      setForm(empty);
+      setEditing(null);
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const startEdit = (cat) => {
+    setEditing(cat.category_id);
+    setForm({
+      categoryName: cat.category_name,
+      parentCategoryId: cat.parent_category_id ? String(cat.parent_category_id) : ''
+    });
+    setError('');
+    setMessage('');
+  };
+
+  const cancelEdit = () => {
+    setEditing(null);
+    setForm(empty);
+  };
+
+  const remove = async (id, name) => {
+    if (!window.confirm(`Delete category "${name}"?`)) return;
+    setError('');
+    setMessage('');
+    try {
+      const res = await api.deleteCategory(id);
+      setMessage(res.message || 'Category deleted.');
+      if (editing === id) cancelEdit();
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const getParentName = (parentId) => {
+    if (!parentId) return null;
+    const parent = categories.find((c) => c.category_id === parentId);
+    return parent ? parent.category_name : `Category #${parentId}`;
+  };
+
+  return (
+    <section className="dashboard-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Catalog taxonomy</p>
+          <h2>{editing ? 'Edit category' : `Categories (${categories.length})`}</h2>
+        </div>
+        {editing ? (
+          <button type="button" className="small-button" onClick={cancelEdit}>
+            Cancel
+          </button>
+        ) : (
+          <button type="button" className="small-button" onClick={load} disabled={loading}>
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        )}
+      </div>
+
+      <form className="compact-form" onSubmit={submit} style={{ display: 'grid', gap: '14px', marginBottom: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#536168' }}>
+            Category name
+            <input
+              required
+              placeholder="e.g. Electronics"
+              value={form.categoryName}
+              onChange={(e) => setForm({ ...form, categoryName: e.target.value })}
+              style={{
+                width: '100%',
+                height: '39px',
+                padding: '9px 12px',
+                marginTop: '5px',
+                boxSizing: 'border-box',
+                border: '1px solid #bfc8ca',
+                borderRadius: '4px',
+                font: 'inherit'
+              }}
+            />
+          </label>
+
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#536168' }}>
+            Parent category (optional)
+            <select
+              value={form.parentCategoryId}
+              onChange={(e) => setForm({ ...form, parentCategoryId: e.target.value })}
+              style={{
+                width: '100%',
+                height: '39px',
+                padding: '8px 12px',
+                marginTop: '5px',
+                boxSizing: 'border-box',
+                border: '1px solid #bfc8ca',
+                borderRadius: '4px',
+                background: '#fff',
+                font: 'inherit'
+              }}
+            >
+              <option value="">None (Top-level category)</option>
+              {categories
+                .filter((c) => c.category_id !== editing)
+                .map((c) => (
+                  <option key={c.category_id} value={c.category_id}>
+                    {c.category_name} (ID #{c.category_id})
+                  </option>
+                ))}
+            </select>
+          </label>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            type="submit"
+            disabled={submitting}
+            style={{
+              padding: '10px 18px',
+              backgroundColor: '#e9a523',
+              color: '#192731',
+              border: 0,
+              borderRadius: '4px',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            {submitting ? 'Saving...' : editing ? 'Save category' : 'Create category'}
+          </button>
+          {editing && (
+            <button
+              type="button"
+              className="small-button secondary-button"
+              onClick={cancelEdit}
+              style={{ padding: '10px 16px', borderRadius: '4px' }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </form>
+
+      {error && <p className="error" role="alert">{error}</p>}
+      {message && <p className="success">{message}</p>}
+
+      <div style={{ display: 'grid', gap: '10px', marginTop: '16px' }}>
+        {loading && !categories.length ? (
+          <p className="muted">Loading categories...</p>
+        ) : !categories.length ? (
+          <p className="muted">No categories created yet.</p>
+        ) : (
+          categories.map((cat) => {
+            const parentName = getParentName(cat.parent_category_id);
+            return (
+              <article
+                key={cat.category_id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  padding: '12px 14px',
+                  border: '1px solid #ddd9d0',
+                  borderRadius: '4px',
+                  gap: '12px'
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <strong>{cat.category_name}</strong>
+                    <span className="status-pill">ID #{cat.category_id}</span>
+                  </div>
+                  <p style={{ margin: '4px 0 0', color: '#69757c', fontSize: '13px' }}>
+                    {parentName ? `Parent: ${parentName}` : 'Top-level category'}
+                  </p>
+                </div>
+                <div className="form-actions" style={{ display: 'flex', gap: '8px', margin: 0 }}>
+                  <button
+                    type="button"
+                    className="small-button"
+                    onClick={() => startEdit(cat)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="small-button danger-button"
+                    onClick={() => remove(cat.category_id, cat.category_name)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </article>
+            );
+          })
+        )}
+      </div>
+    </section>
+  );
+}
+
 function DeliveryBoyManager() {
   const empty = { fullName: '', phoneNumber: '', email: '' };
   const [deliveryBoys, setDeliveryBoys] = useState([]);
@@ -890,15 +1132,17 @@ function Admin() {
         <section className="dashboard-hero admin-hero">
           <p className="eyebrow">Admin dashboard</p>
           <h1>Marketplace operations.</h1>
-          <p className="muted">Manage order fulfillment, delivery personnel, and marketplace discounts.</p>
+          <p className="muted">Manage order fulfillment, product categories, delivery personnel, and marketplace discounts.</p>
         </section>
 
         <AdminOrderManager />
 
-        <div className="dashboard-grid">
+        <div className="dashboard-grid" style={{ marginBottom: '24px' }}>
+          <CategoryManager />
           <DeliveryBoyManager />
-          <DiscountManager />
         </div>
+
+        <DiscountManager />
       </main>
     </Guard>
   );
