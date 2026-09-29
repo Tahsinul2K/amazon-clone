@@ -1530,7 +1530,7 @@ function CompactAddressBook() {
 
 function OrderHistory() {
   const [orders, setOrders] = useState([]);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -1545,89 +1545,158 @@ function OrderHistory() {
     return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
   };
 
+  const summarizeItems = (items = []) => {
+    const grouped = new Map();
+
+    items.forEach((item) => {
+      const productId = item.productId ?? item.product_id ?? 'unknown';
+      const productName = item.productName ?? item.product_name ?? 'Product';
+      const unitPrice = Number(item.unitPrice ?? item.unit_price ?? 0);
+      const key = `${productId}|${productName}|${unitPrice}`;
+
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          productId,
+          name: productName,
+          unitPrice,
+          quantity: 0,
+          imageUrl: item.imageUrl ?? item.image_url ?? item.image ?? ''
+        });
+      }
+
+      grouped.get(key).quantity += 1;
+    });
+
+    return Array.from(grouped.values()).map((entry) => ({
+      ...entry,
+      subtotal: entry.unitPrice * entry.quantity
+    }));
+  };
+
+  const activeOrders = orders.filter((order) => ['pending', 'shipped'].includes((order.status || '').toLowerCase()));
+  const previousOrders = orders.filter((order) => ['delivered', 'cancelled'].includes((order.status || '').toLowerCase()));
+
+  const renderOrderCard = (order) => {
+    const items = Array.isArray(order.items) ? order.items : [];
+    const total = Number(order.total_amount ?? order.totalAmount ?? order.amount ?? 0);
+    const paymentMethod = order.payment_method ?? order.paymentMethod ?? 'Cash on delivery';
+    const paymentStatus = order.payment_status ?? order.paymentStatus ?? 'pending';
+    const receiverName = order.receiver_name ?? order.receiverName ?? 'Receiver';
+    const receiverPhone = order.receiver_phone_number ?? order.receiverPhoneNumber ?? '—';
+    const groupedItems = summarizeItems(items);
+
+    return (
+      <article className="order-card" key={order.order_id ?? order.orderId}>
+        <div className="order-card-heading">
+          <div className="order-heading-main">
+            <strong>Order #{order.order_id ?? order.orderId}</strong>
+            <small>{formatDate(order.created_at ?? order.createdAt)}</small>
+          </div>
+          <span className={`status-pill ${order.status === 'delivered' ? 'green' : ''}`}>
+            {order.status}
+          </span>
+        </div>
+
+        <div className="order-summary-row">
+          <span>Receiver: {receiverName}</span>
+          <span>{receiverPhone}</span>
+        </div>
+
+        <div className="order-meta-list">
+          <span><strong>Payment:</strong> {paymentMethod}</span>
+          <span><strong>Status:</strong> {paymentStatus}</span>
+          <span><strong>Total:</strong> {money(total)}</span>
+        </div>
+
+        {groupedItems.length ? (
+          <div className="order-product-list">
+            {groupedItems.map((item, index) => {
+              const productId = item.productId ?? item.product_id;
+              const itemName = item.name || 'Product';
+              const image = item.imageUrl || '';
+
+              return (
+                <div className="order-product-row" key={`${order.order_id ?? order.orderId}-${productId ?? index}`}>
+                  <div className="order-product-left">
+                    {image ? (
+                      <img src={imageUrl(image)} alt={itemName} />
+                    ) : (
+                      <div className="image-placeholder small"><span>Item</span></div>
+                    )}
+                    <div>
+                      <strong>
+                        {productId ? <Link to={`/products/${productId}`}>{itemName}</Link> : itemName}
+                      </strong>
+                      <span>Qty: {item.quantity}</span>
+                    </div>
+                  </div>
+                  <div className="order-product-pricing">
+                    <strong>{money(item.subtotal)}</strong>
+                    <small>{money(item.unitPrice)} each</small>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="muted">No item details are attached to this order.</p>
+        )}
+
+        <div className="order-card-total">
+          <span>Order total</span>
+          <strong>{money(total)}</strong>
+        </div>
+      </article>
+    );
+  };
+
   return (
     <section className="dashboard-panel order-history">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Your purchases</p>
-          <h2>Previously ordered</h2>
+          <h2>Orders</h2>
         </div>
         <button className="small-button" onClick={() => setOpen(!open)}>
-          {open ? 'Hide history' : `View history (${orders.length})`}
+          {open ? 'Hide details' : 'View orders'}
         </button>
       </div>
 
       {error ? (
         <p className="error">{error}</p>
       ) : !open ? (
-        <p className="muted">Your completed and active purchases will appear here.</p>
-      ) : !orders.length ? (
-        <p className="muted">No orders yet.</p>
+        <p className="muted">Your active and past purchases will appear here.</p>
       ) : (
-        <div className="order-list">
-          {orders.map((order) => {
-            const items = Array.isArray(order.items) ? order.items : [];
-            const total = Number(order.total_amount ?? order.totalAmount ?? order.amount ?? 0);
-            const paymentMethod = order.payment_method ?? order.paymentMethod ?? 'Cash on delivery';
-            const paymentStatus = order.payment_status ?? order.paymentStatus ?? 'pending';
-            const receiverName = order.receiver_name ?? order.receiverName ?? 'Receiver';
-            const receiverPhone = order.receiver_phone_number ?? order.receiverPhoneNumber ?? '—';
+        <div className="buyer-order-sections">
+          <div className="buyer-order-section">
+            <div className="buyer-order-section-header">
+              <h3>Active orders</h3>
+              <span>{activeOrders.length}</span>
+            </div>
 
-            return (
-              <article className="order-card" key={order.order_id ?? order.orderId}>
-                <div className="order-card-heading">
-                  <strong>Order #{order.order_id ?? order.orderId}</strong>
-                  <span className={`status-pill ${order.status === 'delivered' ? 'green' : ''}`}>
-                    {order.status}
-                  </span>
-                  <small>{formatDate(order.created_at ?? order.createdAt)}</small>
-                </div>
+            {activeOrders.length ? (
+              <div className="order-list">
+                {activeOrders.map((order) => renderOrderCard(order))}
+              </div>
+            ) : (
+              <p className="muted">No active orders right now.</p>
+            )}
+          </div>
 
-                <div className="order-summary-row">
-                  <span>Receiver: {receiverName} ({receiverPhone})</span>
-                </div>
+          <div className="buyer-order-section">
+            <div className="buyer-order-section-header">
+              <h3>Previous orders</h3>
+              <span>{previousOrders.length}</span>
+            </div>
 
-                <div className="order-meta-list" style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', margin: '8px 0', fontSize: '13px' }}>
-                  <span><strong>Payment:</strong> {paymentMethod}</span>
-                  <span><strong>Payment Status:</strong> {paymentStatus}</span>
-                  {order.transaction_id && <span><strong>Transaction ID:</strong> <code>{order.transaction_id}</code></span>}
-                  <span><strong>Total:</strong> {money(total)}</span>
-                </div>
-
-                {items.length ? (
-                  <div className="ordered-items" style={{ marginTop: '10px', borderTop: '1px solid #f0ede6', paddingTop: '10px' }}>
-                    {items.map((item, index) => {
-                      const unitId = item.unitId ?? item.unit_id;
-                      const productId = item.productId ?? item.product_id;
-                      const itemName = item.productName ?? item.product_name ?? 'Product';
-                      const itemPrice = Number(item.unitPrice ?? item.unit_price ?? 0);
-                      const image = item.imageUrl ?? item.image_url ?? item.image ?? '';
-
-                      return (
-                        <div className="ordered-item" key={`${order.order_id ?? order.orderId}-${unitId ?? index}`}>
-                          {image ? (
-                            <img src={imageUrl(image)} alt={itemName} />
-                          ) : (
-                            <div className="image-placeholder small"><span>Item</span></div>
-                          )}
-                          <div>
-                            <strong>
-                              {productId ? <Link to={`/products/${productId}`}>{itemName}</Link> : itemName}
-                            </strong>
-                            <span>
-                              Unit ID #{unitId} · {money(itemPrice)}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="muted">No item details are attached to this order.</p>
-                )}
-              </article>
-            );
-          })}
+            {previousOrders.length ? (
+              <div className="order-list">
+                {previousOrders.map((order) => renderOrderCard(order))}
+              </div>
+            ) : (
+              <p className="muted">No past orders yet.</p>
+            )}
+          </div>
         </div>
       )}
     </section>
