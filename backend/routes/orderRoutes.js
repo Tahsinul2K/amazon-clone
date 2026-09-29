@@ -31,4 +31,10 @@ router.put(
     orderController.updateOrderStatus
 );
 
+router.get(
+    '/seller/orders',
+    auth.requiresSellerAuth,
+    orderController.getSellerOrders
+);
+
 module.exports = router;

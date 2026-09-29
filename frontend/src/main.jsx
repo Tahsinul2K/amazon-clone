@@ -37,6 +37,7 @@ const api = {
   product: (id) => request(`/products/${id}`),
   sellerProducts: () => request('/seller/products'),
   sellerStats: () => request('/seller/stats'),
+  sellerOrders: (status = '') => request(status ? `/seller/orders?status=${encodeURIComponent(status)}` : '/seller/orders'),
   discounts: () => request('/discounts'),
   createDiscount: (body) => request('/discounts', { method: 'POST', body: JSON.stringify(body) }),
   updateDiscount: (id, body) => request(`/discounts/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
@@ -1263,13 +1264,369 @@ function ProductEditor({ product, onSaved, onCancel }) {
   return <form className="dashboard-panel product-editor" onSubmit={submit}><div className="section-heading"><div><p className="eyebrow">{editing ? 'Edit product' : 'New listing'}</p><h2>{editing ? product.product_name : 'Create product'}</h2></div>{editing && <button type="button" className="small-button" onClick={onCancel}>Close</button>}</div><input placeholder="Product name" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /><textarea placeholder="Description" required value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /><div className="form-grid"><input type="number" min="0.01" step="0.01" placeholder="Price" required value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /><input type="number" min="0" step="1" placeholder={editing ? 'Add stock' : 'Initial stock'} required value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} /></div><fieldset className="category-picker" disabled={categoryLoading || Boolean(categoryError)}><legend>Categories</legend>{categoryLoading ? <p className="muted">Loading categories...</p> : categoryError ? <p className="error">Categories unavailable: {categoryError}</p> : categories.length ? <div className="category-options">{categories.map((category) => <label key={category.category_id}><input type="checkbox" checked={selectedCategories.includes(String(category.category_id))} onChange={() => toggleCategory(category.category_id)} /> {category.category_name}</label>)}</div> : <p className="muted">No categories are available yet.</p>}</fieldset><label className="upload-label">{editing ? 'Add images to this product' : 'Product images'}<input type="file" accept="image/*" multiple onChange={(e) => setFiles([...e.target.files])} /></label>{editing && <div className="edit-images">{(product.images || []).map((image) => <div key={image.imageId || image.image_id}><img src={imageUrl(image.imageUrl || image.image_url)} alt="" /><button type="button" className="small-button" onClick={() => api.primaryImage(product.product_id, image.imageId || image.image_id).then(onSaved).catch((e) => setError(e.message))}>{image.isPrimary || image.is_primary ? 'Primary' : 'Set primary'}</button><button type="button" className="small-button danger-button" onClick={() => api.deleteImage(image.imageId || image.image_id).then(onSaved).catch((e) => setError(e.message))}>Delete</button></div>)}</div>}{error && <p className="error">{error}</p>}{message && <p className="success">{message}</p>}<button>{editing ? 'Save product changes' : 'Create product'}</button></form>;
 }
 
+function SellerOrderHistory() {
+  const [orders, setOrders] = useState([]);
+  const [filter, setFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const loadOrders = (status = filter) => {
+    setLoading(true);
+    setError('');
+    api.sellerOrders(status)
+      .then((res) => setOrders(res.orders || []))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadOrders(filter);
+  }, [filter]);
+
+  const formatDate = (val) => {
+    if (!val) return '—';
+    const d = new Date(val);
+    return Number.isNaN(d.getTime()) ? val : d.toLocaleString();
+  };
+
+  return (
+    <section className="dashboard-panel" style={{ marginBottom: '24px' }}>
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Order history</p>
+          <h2>Orders on your products ({orders.length})</h2>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <label style={{ font: '700 12px Arial, sans-serif', color: '#536168' }}>
+            Status:
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              style={{ marginLeft: '8px', padding: '6px 10px', borderRadius: '3px', border: '1px solid #bfc8ca' }}
+            >
+              <option value="">All orders</option>
+              <option value="pending">Pending</option>
+              <option value="shipped">Shipped</option>
+              <option value="delivered">Delivered</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="returned">Returned</option>
+            </select>
+          </label>
+          <button type="button" className="small-button" onClick={() => loadOrders(filter)} disabled={loading}>
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+      </div>
+
+      {error && <p className="error" role="alert">{error}</p>}
+
+      {loading && !orders.length ? (
+        <p className="muted">Loading seller order history...</p>
+      ) : !orders.length ? (
+        <p className="muted">No orders found for your products.</p>
+      ) : (
+        <div className="order-list" style={{ display: 'grid', gap: '14px' }}>
+          {orders.map((order) => {
+            const items = Array.isArray(order.items) ? order.items : [];
+
+            return (
+              <article className="order-card" key={order.order_id}>
+                <div className="order-card-heading">
+                  <strong>Order #{order.order_id}</strong>
+                  <span className={`status-pill ${order.status === 'delivered' ? 'green' : ''}`}>
+                    {order.status}
+                  </span>
+                  <small>Placed: {formatDate(order.created_at)}</small>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px', margin: '10px 0', fontSize: '13px' }}>
+                  <div>
+                    <strong>Receiver:</strong> {order.receiver_name} ({order.receiver_phone_number})
+                  </div>
+                  <div>
+                    <strong>Payment:</strong> {order.payment_method || 'COD'} ·{' '}
+                    <span className="muted">{order.payment_status || 'pending'}</span>
+                  </div>
+                  <div>
+                    <strong>Your Order Subtotal:</strong> {money(order.seller_order_total || 0)}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '10px', borderTop: '1px solid #f0ede6', paddingTop: '10px' }}>
+                  <strong style={{ fontSize: '12px', textTransform: 'uppercase', color: '#536168', display: 'block', marginBottom: '8px' }}>
+                    Ordered Units ({items.length})
+                  </strong>
+                  <div style={{ display: 'grid', gap: '8px' }}>
+                    {items.map((item) => (
+                      <div
+                        key={item.unit_id}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          padding: '8px 12px',
+                          background: '#f7f5f0',
+                          borderRadius: '4px',
+                          fontSize: '13px',
+                          gap: '10px'
+                        }}
+                      >
+                        <div>
+                          <strong>{item.product_name}</strong>{' '}
+                          <span className="muted">(Product ID #{item.product_id})</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span className="status-pill">Unit ID #{item.unit_id}</span>
+                          <span>Sold at: <strong>{money(item.unit_price)}</strong></span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// function SellerDashboard() {
+//   const [products, setProducts] = useState([]); const [discounts, setDiscounts] = useState([]); const [stats, setStats] = useState(null); const [editing, setEditing] = useState(null); const [creating, setCreating] = useState(false); const [error, setError] = useState(''); const [statsError, setStatsError] = useState(''); const [discountError, setDiscountError] = useState(''); const [message, setMessage] = useState('');
+//   const load = () => Promise.all([api.sellerProducts().then(setProducts), api.discounts().then((result) => setDiscounts(result.discounts || [])), api.sellerStats().then(setStats).catch((e) => setStatsError(e.message))]).catch((e) => setError(e.message)); useEffect(() => { load(); }, []);
+//   const assign = async (productId, discountId) => { setDiscountError(''); setMessage(''); try { if (discountId) { const result = await api.assignProductDiscount(productId, Number(discountId)); setMessage(result.message); } else { const result = await api.removeProductDiscount(productId); setMessage(result.message); } await load(); } catch (e) { setDiscountError(e.message); } };
+//   const summary = stats?.summary || {}; const popularProducts = stats?.popularProducts || []; const currentOrders = stats?.currentOrders || [];
+//   const formatDate = (value) => value ? new Date(value).toLocaleDateString() : '—';
+//   return <main><section className="dashboard-hero seller-hero"><p className="eyebrow">Seller dashboard</p><h1>Build a storefront people trust.</h1><p className="muted">Manage each product as one listing, with one image gallery and its promotional pricing.</p><button className="button" onClick={() => { setCreating(true); setEditing(null); }}>Create product</button></section>{error && <ErrorMessage message={error} />}{(creating || editing) && <ProductEditor product={editing} onCancel={() => { setCreating(false); setEditing(null); }} onSaved={() => { setCreating(false); setEditing(null); load(); }} />}<section className="seller-stats"><div className="section-heading"><div><p className="eyebrow">Performance</p><h2>Store statistics</h2></div></div>{statsError ? <p className="error" role="alert">{statsError}</p> : <><div className="stats-grid"><article className="stat-card"><span>Total revenue</span><strong>{money(summary.total_revenue || 0)}</strong></article><article className="stat-card"><span>Paid orders</span><strong>{summary.total_orders || 0}</strong></article><article className="stat-card"><span>Units sold</span><strong>{summary.total_units_sold || 0}</strong></article></div><div className="stats-detail-grid"><section><div className="section-heading"><div><p className="eyebrow">Product performance</p><h3>Most popular products</h3></div></div>{popularProducts.length ? <div className="stats-list">{popularProducts.map((product) => <article className="stats-row" key={product.product_id}><div><strong>{product.product_name}</strong><span>{product.units_sold} units sold</span></div><strong>{money(product.product_revenue)}</strong></article>)}</div> : <p className="muted">No paid product sales yet.</p>}</section><section><div className="section-heading"><div><p className="eyebrow">Fulfillment</p><h3>Current orders</h3></div><span>{currentOrders.length}</span></div>{currentOrders.length ? <div className="stats-list">{currentOrders.map((order) => <article className="stats-row" key={order.order_id}><div><strong>Order #{order.order_id}</strong><span>{order.item_count} item(s) · {formatDate(order.created_at)}</span></div><div className="stats-order-meta"><span className={`status-pill ${order.status === 'shipped' ? 'green' : ''}`}>{order.status}</span><strong>{money(order.seller_order_total)}</strong></div></article>)}</div> : <p className="muted">No current orders.</p>}</section></div></>}</section><section className="seller-catalog"><div className="section-heading"><div><p className="eyebrow">Your catalog</p><h2>Products</h2></div><span>{products.length} listings</span></div>{discountError && <p className="error" role="alert">{discountError}</p>}{message && <p className="success">{message}</p>}{products.length ? products.map((product) => <article className="seller-listing" key={product.product_id}><ProductImage product={product} /><div><h3>{product.product_name}</h3><p>{money(effectivePrice(product))}{effectivePrice(product) < Number(product.price) && ` (was ${money(product.price)})`} · {product.available_stock} available · {(product.images || []).length} images</p><label className="discount-select">Promotion<select value={product.discount_id || ''} onChange={(e) => assign(product.product_id, e.target.value)}><option value="">No discount</option>{discounts.map((discount) => <option key={discount.discount_id} value={discount.discount_id}>{discount.discount_name} ({discount.discount_type === 'percentage' ? `${discount.discount_value}%` : money(discount.discount_value)})</option>)}</select></label></div><button className="small-button" onClick={() => { setEditing(product); setCreating(false); }}>Edit product</button></article>) : <p className="state">No products yet.</p>}</section></main>;
+// }
+
 function SellerDashboard() {
-  const [products, setProducts] = useState([]); const [discounts, setDiscounts] = useState([]); const [stats, setStats] = useState(null); const [editing, setEditing] = useState(null); const [creating, setCreating] = useState(false); const [error, setError] = useState(''); const [statsError, setStatsError] = useState(''); const [discountError, setDiscountError] = useState(''); const [message, setMessage] = useState('');
-  const load = () => Promise.all([api.sellerProducts().then(setProducts), api.discounts().then((result) => setDiscounts(result.discounts || [])), api.sellerStats().then(setStats).catch((e) => setStatsError(e.message))]).catch((e) => setError(e.message)); useEffect(() => { load(); }, []);
-  const assign = async (productId, discountId) => { setDiscountError(''); setMessage(''); try { if (discountId) { const result = await api.assignProductDiscount(productId, Number(discountId)); setMessage(result.message); } else { const result = await api.removeProductDiscount(productId); setMessage(result.message); } await load(); } catch (e) { setDiscountError(e.message); } };
-  const summary = stats?.summary || {}; const popularProducts = stats?.popularProducts || []; const currentOrders = stats?.currentOrders || [];
-  const formatDate = (value) => value ? new Date(value).toLocaleDateString() : '—';
-  return <main><section className="dashboard-hero seller-hero"><p className="eyebrow">Seller dashboard</p><h1>Build a storefront people trust.</h1><p className="muted">Manage each product as one listing, with one image gallery and its promotional pricing.</p><button className="button" onClick={() => { setCreating(true); setEditing(null); }}>Create product</button></section>{error && <ErrorMessage message={error} />}{(creating || editing) && <ProductEditor product={editing} onCancel={() => { setCreating(false); setEditing(null); }} onSaved={() => { setCreating(false); setEditing(null); load(); }} />}<section className="seller-stats"><div className="section-heading"><div><p className="eyebrow">Performance</p><h2>Store statistics</h2></div></div>{statsError ? <p className="error" role="alert">{statsError}</p> : <><div className="stats-grid"><article className="stat-card"><span>Total revenue</span><strong>{money(summary.total_revenue || 0)}</strong></article><article className="stat-card"><span>Paid orders</span><strong>{summary.total_orders || 0}</strong></article><article className="stat-card"><span>Units sold</span><strong>{summary.total_units_sold || 0}</strong></article></div><div className="stats-detail-grid"><section><div className="section-heading"><div><p className="eyebrow">Product performance</p><h3>Most popular products</h3></div></div>{popularProducts.length ? <div className="stats-list">{popularProducts.map((product) => <article className="stats-row" key={product.product_id}><div><strong>{product.product_name}</strong><span>{product.units_sold} units sold</span></div><strong>{money(product.product_revenue)}</strong></article>)}</div> : <p className="muted">No paid product sales yet.</p>}</section><section><div className="section-heading"><div><p className="eyebrow">Fulfillment</p><h3>Current orders</h3></div><span>{currentOrders.length}</span></div>{currentOrders.length ? <div className="stats-list">{currentOrders.map((order) => <article className="stats-row" key={order.order_id}><div><strong>Order #{order.order_id}</strong><span>{order.item_count} item(s) · {formatDate(order.created_at)}</span></div><div className="stats-order-meta"><span className={`status-pill ${order.status === 'shipped' ? 'green' : ''}`}>{order.status}</span><strong>{money(order.seller_order_total)}</strong></div></article>)}</div> : <p className="muted">No current orders.</p>}</section></div></>}</section><section className="seller-catalog"><div className="section-heading"><div><p className="eyebrow">Your catalog</p><h2>Products</h2></div><span>{products.length} listings</span></div>{discountError && <p className="error" role="alert">{discountError}</p>}{message && <p className="success">{message}</p>}{products.length ? products.map((product) => <article className="seller-listing" key={product.product_id}><ProductImage product={product} /><div><h3>{product.product_name}</h3><p>{money(effectivePrice(product))}{effectivePrice(product) < Number(product.price) && ` (was ${money(product.price)})`} · {product.available_stock} available · {(product.images || []).length} images</p><label className="discount-select">Promotion<select value={product.discount_id || ''} onChange={(e) => assign(product.product_id, e.target.value)}><option value="">No discount</option>{discounts.map((discount) => <option key={discount.discount_id} value={discount.discount_id}>{discount.discount_name} ({discount.discount_type === 'percentage' ? `${discount.discount_value}%` : money(discount.discount_value)})</option>)}</select></label></div><button className="small-button" onClick={() => { setEditing(product); setCreating(false); }}>Edit product</button></article>) : <p className="state">No products yet.</p>}</section></main>;
+  const [products, setProducts] = useState([]);
+  const [discounts, setDiscounts] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState('');
+  const [statsError, setStatsError] = useState('');
+  const [discountError, setDiscountError] = useState('');
+  const [message, setMessage] = useState('');
+
+  const load = () =>
+    Promise.all([
+      api.sellerProducts().then(setProducts),
+      api.discounts().then((result) => setDiscounts(result.discounts || [])),
+      api.sellerStats().then(setStats).catch((e) => setStatsError(e.message))
+    ]).catch((e) => setError(e.message));
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const assign = async (productId, discountId) => {
+    setDiscountError('');
+    setMessage('');
+    try {
+      if (discountId) {
+        const result = await api.assignProductDiscount(productId, Number(discountId));
+        setMessage(result.message);
+      } else {
+        const result = await api.removeProductDiscount(productId);
+        setMessage(result.message);
+      }
+      await load();
+    } catch (e) {
+      setDiscountError(e.message);
+    }
+  };
+
+  const summary = stats?.summary || {};
+  const popularProducts = stats?.popularProducts || [];
+  const currentOrders = stats?.currentOrders || [];
+  const formatDate = (value) => (value ? new Date(value).toLocaleDateString() : '—');
+
+  return (
+    <main>
+      <section className="dashboard-hero seller-hero">
+        <p className="eyebrow">Seller dashboard</p>
+        <h1>Build a storefront people trust.</h1>
+        <p className="muted">Manage each product as one listing, with one image gallery and its promotional pricing.</p>
+        <button
+          className="button"
+          onClick={() => {
+            setCreating(true);
+            setEditing(null);
+          }}
+        >
+          Create product
+        </button>
+      </section>
+
+      {error && <ErrorMessage message={error} />}
+
+      {(creating || editing) && (
+        <ProductEditor
+          product={editing}
+          onCancel={() => {
+            setCreating(false);
+            setEditing(null);
+          }}
+          onSaved={() => {
+            setCreating(false);
+            setEditing(null);
+            load();
+          }}
+        />
+      )}
+
+      <section className="seller-stats">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Performance</p>
+            <h2>Store statistics</h2>
+          </div>
+        </div>
+
+        {statsError ? (
+          <p className="error" role="alert">{statsError}</p>
+        ) : (
+          <>
+            <div className="stats-grid">
+              <article className="stat-card">
+                <span>Total revenue</span>
+                <strong>{money(summary.total_revenue || 0)}</strong>
+              </article>
+              <article className="stat-card">
+                <span>Paid orders</span>
+                <strong>{summary.total_orders || 0}</strong>
+              </article>
+              <article className="stat-card">
+                <span>Units sold</span>
+                <strong>{summary.total_units_sold || 0}</strong>
+              </article>
+            </div>
+
+            <div className="stats-detail-grid">
+              <section>
+                <div className="section-heading">
+                  <div>
+                    <p className="eyebrow">Product performance</p>
+                    <h3>Most popular products</h3>
+                  </div>
+                </div>
+                {popularProducts.length ? (
+                  <div className="stats-list">
+                    {popularProducts.map((product) => (
+                      <article className="stats-row" key={product.product_id}>
+                        <div>
+                          <strong>{product.product_name}</strong>
+                          <span>{product.units_sold} units sold</span>
+                        </div>
+                        <strong>{money(product.product_revenue)}</strong>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">No paid product sales yet.</p>
+                )}
+              </section>
+
+              <section>
+                <div className="section-heading">
+                  <div>
+                    <p className="eyebrow">Fulfillment</p>
+                    <h3>Current orders</h3>
+                  </div>
+                  <span>{currentOrders.length}</span>
+                </div>
+                {currentOrders.length ? (
+                  <div className="stats-list">
+                    {currentOrders.map((order) => (
+                      <article className="stats-row" key={order.order_id}>
+                        <div>
+                          <strong>Order #{order.order_id}</strong>
+                          <span>{order.item_count} item(s) · {formatDate(order.created_at)}</span>
+                        </div>
+                        <div className="stats-order-meta">
+                          <span className={`status-pill ${order.status === 'shipped' ? 'green' : ''}`}>
+                            {order.status}
+                          </span>
+                          <strong>{money(order.seller_order_total)}</strong>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">No current orders.</p>
+                )}
+              </section>
+            </div>
+          </>
+        )}
+      </section>
+
+      <SellerOrderHistory />
+
+      <section className="seller-catalog">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Your catalog</p>
+            <h2>Products</h2>
+          </div>
+          <span>{products.length} listings</span>
+        </div>
+
+        {discountError && <p className="error" role="alert">{discountError}</p>}
+        {message && <p className="success">{message}</p>}
+
+        {products.length ? (
+          products.map((product) => (
+            <article className="seller-listing" key={product.product_id}>
+              <ProductImage product={product} />
+              <div>
+                <h3>{product.product_name}</h3>
+                <p>
+                  {money(effectivePrice(product))}
+                  {effectivePrice(product) < Number(product.price) && ` (was ${money(product.price)})`} ·{' '}
+                  {product.available_stock} available · {(product.images || []).length} images
+                </p>
+                <label className="discount-select">
+                  Promotion
+                  <select
+                    value={product.discount_id || ''}
+                    onChange={(e) => assign(product.product_id, e.target.value)}
+                  >
+                    <option value="">No discount</option>
+                    {discounts.map((discount) => (
+                      <option key={discount.discount_id} value={discount.discount_id}>
+                        {discount.discount_name} (
+                        {discount.discount_type === 'percentage'
+                          ? `${discount.discount_value}%`
+                          : money(discount.discount_value)}
+                        )
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <button
+                className="small-button"
+                onClick={() => {
+                  setEditing(product);
+                  setCreating(false);
+                }}
+              >
+                Edit product
+              </button>
+            </article>
+          ))
+        ) : (
+          <p className="state">No products yet.</p>
+        )}
+      </section>
+    </main>
+  );
 }
 
 function App() { return <><Header /><Routes><Route path="/" element={<Home />} /><Route path="/products/:id" element={<Product />} /><Route path="/login" element={<Login />} /><Route path="/admin/login" element={<AdminLogin />} /><Route path="/register/buyer" element={<Register role="buyer" />} /><Route path="/register/seller" element={<Register role="seller" />} /><Route path="/cart" element={<Guard role="buyer"><Cart /></Guard>} /><Route path="/buyer" element={<BuyerDashboard />} /><Route path="/seller" element={<Guard role="seller"><SellerDashboard /></Guard>} /><Route path="/admin" element={<Admin />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></>; }

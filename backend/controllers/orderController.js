@@ -710,6 +710,91 @@ const updateOrderStatus = async (req, res) => {
         client.release();
     }
 };
+
+// GET /api/seller/orders
+const getSellerOrders = async (req, res) => {
+    try {
+        const sellerId = req.session.sellerId;
+        const { status } = req.query;
+
+        const validStatuses = [
+            'pending',
+            'confirmed',
+            'shipped',
+            'delivered',
+            'cancelled',
+            'returned'
+        ];
+
+        const params = [sellerId];
+        let statusFilter = '';
+
+        if (status) {
+            const formattedStatus = status.toLowerCase();
+            if (!validStatuses.includes(formattedStatus)) {
+                return res.status(400).json({
+                    error: `Invalid status. Allowed values: ${validStatuses.join(', ')}`
+                });
+            }
+            params.push(formattedStatus);
+            statusFilter = ` AND LOWER(o.status) = $2`;
+        }
+
+        const result = await pool.query(`
+            SELECT
+                o.order_id,
+                o.status,
+                o.created_at,
+                o.completed_at,
+                o.receiver_name,
+                o.receiver_phone_number,
+                pay.payment_method,
+                pay.payment_status,
+                COALESCE(SUM(oi.unit_price), 0) AS seller_order_total,
+                json_agg(
+                    json_build_object(
+                        'unit_id', oi.unit_id,
+                        'unit_price', oi.unit_price,
+                        'unit_status', pu.unit_status,
+                        'product_id', p.product_id,
+                        'product_name', p.product_name
+                    ) ORDER BY oi.unit_id
+                ) AS items
+            FROM orders o
+            JOIN order_item oi
+                ON oi.order_id = o.order_id
+            JOIN product_unit pu
+                ON pu.unit_id = oi.unit_id
+            JOIN product p
+                ON p.product_id = pu.product_id
+            LEFT JOIN payment pay
+                ON pay.order_id = o.order_id
+            WHERE p.seller_id = $1
+            ${statusFilter}
+            GROUP BY
+                o.order_id,
+                o.status,
+                o.created_at,
+                o.completed_at,
+                o.receiver_name,
+                o.receiver_phone_number,
+                pay.payment_method,
+                pay.payment_status
+            ORDER BY o.created_at DESC
+        `, params);
+
+        return res.status(200).json({
+            orders: result.rows
+        });
+
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({
+            error: 'Database error'
+        });
+    }
+};
+
 module.exports = {
     postOrders,
     completeOrder,
@@ -717,5 +802,6 @@ module.exports = {
     getOrderById,
     getAdminOrders,
     updateOrderStatus,
-    assignWaitingOrderToDeliveryBoy
+    assignWaitingOrderToDeliveryBoy,
+    getSellerOrders
 }
