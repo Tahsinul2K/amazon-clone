@@ -51,7 +51,7 @@ const getProductReviews = async (req, res) => {
         }
 
         const result = await pool.query(`
-            SELECT r.product_id, r.buyer_id, r.rating, r.review_text, r.reviewed_at, b.name AS buyer_name
+            SELECT r.product_id, r.buyer_id, r.rating, r.review_text, r.reviewed_at, b.full_name AS buyer_name
             FROM REVIEW r
             JOIN BUYER b ON r.buyer_id = b.buyer_id
             WHERE r.product_id = $1
