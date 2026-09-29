@@ -349,6 +349,8 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS review_purchase_check_trigger ON review;
+
 CREATE TRIGGER review_purchase_check_trigger
 BEFORE INSERT OR UPDATE
 ON review
