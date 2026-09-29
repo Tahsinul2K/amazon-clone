@@ -178,27 +178,83 @@ function Cart() {
   const [receiverPhoneNumber, setReceiverPhoneNumber] = useState('');
   const [checkoutMessage, setCheckoutMessage] = useState('');
   const [error, setError] = useState('');
+  const [busyProductId, setBusyProductId] = useState(null);
+  const [placingOrder, setPlacingOrder] = useState(false);
 
-  const load = () => Promise.all([
-    api.cart().then((result) => setItems(result.cart || [])).catch((e) => setError(e.message)),
-    api.addresses().then((result) => {
-      const list = result.addresses || [];
-      setAddresses(list);
-      const current = list.find((address) => address.is_current) || list[0];
-      setSelectedAddressId(current ? String(current.address_id) : '');
-    }).catch((e) => setError(e.message))
-  ]);
+  const load = () =>
+    Promise.all([
+      api.cart().then((result) => setItems(result.cart || [])).catch((e) => setError(e.message)),
+      api.addresses()
+        .then((result) => {
+          const list = result.addresses || [];
+          setAddresses(list);
+          setSelectedAddressId((prev) => {
+            if (prev && list.some((a) => String(a.address_id) === String(prev))) return prev;
+            const current = list.find((address) => address.is_current) || list[0];
+            return current ? String(current.address_id) : '';
+          });
+        })
+        .catch((e) => setError(e.message))
+    ]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
-  const grouped = Object.values((items || []).reduce((map, item) => {
-    const current = map[item.product_id] || { ...item, units: [] };
-    current.units.push(item.unit_id);
-    map[item.product_id] = current;
-    return map;
-  }, {}));
+  const grouped = Object.values(
+    (items || []).reduce((map, item) => {
+      const current = map[item.product_id] || { ...item, units: [] };
+      current.units.push(item.unit_id);
+      map[item.product_id] = current;
+      return map;
+    }, {})
+  );
 
-  const total = grouped.reduce((sum, item) => sum + Number(item.price) * item.units.length, 0);
+  const totalUnits = grouped.reduce((sum, item) => sum + item.units.length, 0);
+  const total = grouped.reduce((sum, item) => sum + effectivePrice(item) * item.units.length, 0);
+
+  const removeOneUnit = async (item) => {
+    const unitId = item.units[item.units.length - 1];
+    if (!unitId) return;
+    setBusyProductId(item.product_id);
+    setError('');
+    try {
+      await api.removeCartItem(unitId);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusyProductId(null);
+    }
+  };
+
+  const addOneUnit = async (item) => {
+    setBusyProductId(item.product_id);
+    setError('');
+    try {
+      await api.addToCart(item.product_id, 1);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusyProductId(null);
+    }
+  };
+
+  const removeAllUnits = async (item) => {
+    setBusyProductId(item.product_id);
+    setError('');
+    try {
+      for (const unitId of item.units) {
+        await api.removeCartItem(unitId);
+      }
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusyProductId(null);
+    }
+  };
 
   const submitOrder = async (event) => {
     event.preventDefault();
@@ -220,6 +276,7 @@ function Cart() {
       return;
     }
 
+    setPlacingOrder(true);
     try {
       const result = await api.placeOrder({
         addressId_: Number(selectedAddressId),
@@ -227,19 +284,268 @@ function Cart() {
         receiverPhoneNumber: receiverPhoneNumber.trim()
       });
 
-      setCheckoutMessage(result.message || 'Order placed successfully.');
-      setSelectedAddressId('');
+      setCheckoutMessage(result.message || 'Order placed successfully!');
       setReceiverName('');
       setReceiverPhoneNumber('');
       await load();
     } catch (e) {
       setError(e.message);
+    } finally {
+      setPlacingOrder(false);
     }
   };
 
   if (!items) return <main><Loading /></main>;
 
-  return <main><section className="page-heading"><div><p className="eyebrow">Your basket</p><h1>Cart</h1></div><Link className="back-link" to="/">Continue shopping</Link></section>{error && <ErrorMessage message={error} />}{!grouped.length ? <p className="state">Your cart is empty.</p> : <section className="cart-list">{grouped.map((item) => <article className="cart-row" key={item.product_id}><div><h2>{item.product_name}</h2><p>{money(item.price)} each · {item.units.length} unit(s)</p></div><div>{item.units.map((unitId) => <button className="small-button" key={unitId} onClick={async () => { await api.removeCartItem(unitId); load(); }}>Remove</button>)}</div></article>)}<div className="cart-total"><span>Total</span><strong>{money(total)}</strong></div><div className="checkout-panel"><h2>Checkout</h2><p className="muted">Cash on delivery only.</p><form className="compact-form" onSubmit={submitOrder}><label>Shipping address<select value={selectedAddressId} onChange={(e) => setSelectedAddressId(e.target.value)}>{addresses.length ? addresses.map((address) => <option key={address.address_id} value={address.address_id}>{address.label}: {address.street}, {address.city}, {address.country}</option>) : <option value="">No saved addresses</option>}</select></label><label>Receiver name<input value={receiverName} onChange={(e) => setReceiverName(e.target.value)} placeholder="Full name" /></label><label>Receiver phone number<input value={receiverPhoneNumber} onChange={(e) => setReceiverPhoneNumber(e.target.value)} placeholder="Phone number" /></label><button type="submit" disabled={!grouped.length}>Place order</button>{checkoutMessage && <p className="success">{checkoutMessage}</p>}</form></div></section>}</main>;
+  return (
+    <main>
+      <section className="page-heading">
+        <div>
+          <p className="eyebrow">Your basket</p>
+          <h1>Shopping Cart</h1>
+        </div>
+        <Link className="back-link" to="/">← Continue shopping</Link>
+      </section>
+
+      {error && <ErrorMessage message={error} />}
+      {checkoutMessage && <p className="state success">{checkoutMessage}</p>}
+
+      {!grouped.length ? (
+        <section className="dashboard-panel" style={{ textAlign: 'center', padding: '48px 24px' }}>
+          <h2 style={{ marginBottom: '8px' }}>Your cart is empty</h2>
+          <p className="muted" style={{ marginBottom: '20px' }}>
+            Browse the marketplace and add items you would like to purchase.
+          </p>
+          <Link className="button" to="/">Explore products</Link>
+        </section>
+      ) : (
+        <div className="dashboard-grid" style={{ alignItems: 'start' }}>
+          {/* Left Column: Cart Items */}
+          <section className="dashboard-panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Reserved items</p>
+                <h2>Items in cart ({totalUnits})</h2>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gap: '14px' }}>
+              {grouped.map((item) => {
+                const unitPrice = effectivePrice(item);
+                const originalPrice = Number(item.price);
+                const isDiscounted = unitPrice < originalPrice;
+                const qty = item.units.length;
+                const subtotal = unitPrice * qty;
+                const isBusy = busyProductId === item.product_id;
+
+                return (
+                  <article
+                    key={item.product_id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '16px',
+                      padding: '16px',
+                      border: '1px solid #e3e0d8',
+                      borderRadius: '6px',
+                      background: '#faf9f6'
+                    }}
+                  >
+                    <div style={{ flex: '1 1 220px' }}>
+                      <Link
+                        to={`/products/${item.product_id}`}
+                        style={{ textDecoration: 'none', fontWeight: '700', fontSize: '18px' }}
+                      >
+                        {item.product_name}
+                      </Link>
+                      <p style={{ margin: '6px 0 0', fontSize: '14px', color: '#536168' }}>
+                        <strong>{money(unitPrice)}</strong> each{' '}
+                        {isDiscounted && (
+                          <del style={{ color: '#8c969c', marginLeft: '4px' }}>
+                            {money(originalPrice)}
+                          </del>
+                        )}
+                      </p>
+                    </div>
+
+                    {/* Quantity Stepper */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="small-button"
+                        onClick={() => removeOneUnit(item)}
+                        disabled={isBusy}
+                        style={{ width: '32px', height: '32px', padding: 0, fontWeight: 'bold' }}
+                        title="Decrease quantity by 1"
+                      >
+                        −
+                      </button>
+                      <span
+                        style={{
+                          minWidth: '36px',
+                          textAlign: 'center',
+                          fontWeight: '700',
+                          fontFamily: 'Arial, sans-serif',
+                          fontSize: '14px'
+                        }}
+                      >
+                        {qty}
+                      </span>
+                      <button
+                        type="button"
+                        className="small-button"
+                        onClick={() => addOneUnit(item)}
+                        disabled={isBusy}
+                        style={{ width: '32px', height: '32px', padding: 0, fontWeight: 'bold' }}
+                        title="Increase quantity by 1"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {/* Line Subtotal & Single Remove Button */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginLeft: 'auto' }}>
+                      <strong style={{ fontSize: '16px', fontFamily: 'Arial, sans-serif', minWidth: '72px', textAlign: 'right' }}>
+                        {money(subtotal)}
+                      </strong>
+                      <button
+                        type="button"
+                        className="small-button danger-button"
+                        onClick={() => removeAllUnits(item)}
+                        disabled={isBusy}
+                      >
+                        {isBusy ? '...' : 'Remove'}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Right Column: Order Summary & Checkout */}
+          <section className="dashboard-panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Order summary</p>
+                <h2>Checkout</h2>
+              </div>
+              <span className="status-pill">Cash on delivery</span>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                padding: '14px 16px',
+                background: '#f7f5f0',
+                borderRadius: '4px',
+                marginBottom: '20px',
+                fontFamily: 'Arial, sans-serif'
+              }}
+            >
+              <span style={{ color: '#536168', fontSize: '14px' }}>
+                Order Total ({totalUnits} {totalUnits === 1 ? 'unit' : 'units'})
+              </span>
+              <strong style={{ fontSize: '24px', color: '#a64120' }}>{money(total)}</strong>
+            </div>
+
+            <form className="compact-form" onSubmit={submitOrder} style={{ display: 'grid', gap: '14px' }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#536168' }}>
+                Shipping address
+                <select
+                  value={selectedAddressId}
+                  onChange={(e) => setSelectedAddressId(e.target.value)}
+                  style={{
+                    width: '100%',
+                    height: '39px',
+                    padding: '8px 12px',
+                    marginTop: '5px',
+                    boxSizing: 'border-box',
+                    border: '1px solid #bfc8ca',
+                    borderRadius: '4px',
+                    background: '#fff',
+                    font: 'inherit'
+                  }}
+                >
+                  {addresses.length ? (
+                    addresses.map((address) => (
+                      <option key={address.address_id} value={address.address_id}>
+                        {address.label}: {address.street}, {address.city}, {address.country}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">No saved addresses — add one in Buyer Dashboard</option>
+                  )}
+                </select>
+              </label>
+
+              {!addresses.length && (
+                <p className="muted" style={{ margin: 0, fontSize: '13px' }}>
+                  Need to add an address? <Link to="/buyer">Go to Buyer Dashboard</Link>
+                </p>
+              )}
+
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#536168' }}>
+                Receiver name
+                <input
+                  required
+                  value={receiverName}
+                  onChange={(e) => setReceiverName(e.target.value)}
+                  placeholder="Full name of receiver"
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    marginTop: '5px',
+                    boxSizing: 'border-box',
+                    border: '1px solid #bfc8ca',
+                    borderRadius: '4px',
+                    font: 'inherit'
+                  }}
+                />
+              </label>
+
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#536168' }}>
+                Receiver phone number
+                <input
+                  required
+                  value={receiverPhoneNumber}
+                  onChange={(e) => setReceiverPhoneNumber(e.target.value)}
+                  placeholder="e.g. 01700000000"
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    marginTop: '5px',
+                    boxSizing: 'border-box',
+                    border: '1px solid #bfc8ca',
+                    borderRadius: '4px',
+                    font: 'inherit'
+                  }}
+                />
+              </label>
+
+              <button
+                type="submit"
+                disabled={!grouped.length || placingOrder}
+                style={{
+                  marginTop: '6px',
+                  padding: '12px 18px',
+                  fontSize: '15px',
+                  fontWeight: '700',
+                  borderRadius: '4px'
+                }}
+              >
+                {placingOrder ? 'Placing order...' : `Place order · ${money(total)}`}
+              </button>
+            </form>
+          </section>
+        </div>
+      )}
+    </main>
+  );
 }
 
 function AddressBook() { const [addresses, setAddresses] = useState([]); const [form, setForm] = useState({ label: 'Home', street: '', city: '', postalCode: '', country: '', isCurrent: true }); const [error, setError] = useState(''); const load = () => api.addresses().then((result) => setAddresses(result.addresses || [])).catch((e) => setError(e.message)); useEffect(() => { load(); }, []); const submit = async (event) => { event.preventDefault(); try { await api.addAddress({ ...form, isCurrent: Boolean(form.isCurrent) }); setForm({ label: 'Home', street: '', city: '', postalCode: '', country: '', isCurrent: false }); load(); } catch (e) { setError(e.message); } }; return <section className="dashboard-panel"><div className="section-heading"><div><p className="eyebrow">Shipping</p><h2>Address book</h2></div></div><form className="compact-form" onSubmit={submit}><input placeholder="Nickname, e.g. Home" required value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} /><input placeholder="Street address" required value={form.street} onChange={(e) => setForm({ ...form, street: e.target.value })} /><div className="form-grid"><input placeholder="City" required value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /><input placeholder="Postal code" required value={form.postalCode} onChange={(e) => setForm({ ...form, postalCode: e.target.value })} /></div><input placeholder="Country" required value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} /><label className="check-label"><input type="checkbox" checked={form.isCurrent} onChange={(e) => setForm({ ...form, isCurrent: e.target.checked })} /> Use as current shipping address</label><button>Add address</button></form>{error && <p className="error">{error}</p>}<div className="address-list">{addresses.map((address) => <article className={`address-item ${address.is_current ? 'selected' : ''}`} key={address.address_id}><div><strong>{address.label}</strong><p>{address.street}, {address.city}, {address.postal_code}, {address.country}</p></div><div className="form-actions">{address.is_current ? <span className="current-tag">Current</span> : <button className="small-button" onClick={() => api.setCurrentAddress(address.address_id).then(load).catch((e) => setError(e.message))}>Use this</button>}<button className="small-button danger-button" onClick={() => api.deleteAddress(address.address_id).then(load).catch((e) => setError(e.message))}>Delete</button></div></article>)}</div></section>; }
