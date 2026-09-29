@@ -1574,7 +1574,7 @@ function OrderHistory() {
   };
 
   const activeOrders = orders.filter((order) => ['pending', 'shipped'].includes((order.status || '').toLowerCase()));
-  const previousOrders = orders.filter((order) => ['delivered', 'cancelled'].includes((order.status || '').toLowerCase()));
+  const previousOrders = orders.filter((order) => ['delivered', 'cancelled', 'returned'].includes((order.status || '').toLowerCase()));
 
   const renderOrderCard = (order) => {
     const items = Array.isArray(order.items) ? order.items : [];
