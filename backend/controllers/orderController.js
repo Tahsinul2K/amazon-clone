@@ -418,11 +418,43 @@ const getOrders = async (req, res) => {
                 P.PAYMENT_METHOD,
                 P.PAYMENT_STATUS,
                 P.TRANSACTION_ID,
-                P.AMOUNT AS TOTAL_AMOUNT
+                P.AMOUNT AS TOTAL_AMOUNT,
+                COALESCE(
+                    json_agg(
+                        json_build_object(
+                            'unit_id', OI.UNIT_ID,
+                            'unit_price', OI.UNIT_PRICE,
+                            'product_id', PR.PRODUCT_ID,
+                            'product_name', PR.PRODUCT_NAME,
+                            'image_url', PI.IMAGE_URL
+                        ) ORDER BY OI.UNIT_ID
+                    ) FILTER (WHERE OI.UNIT_ID IS NOT NULL),
+                    '[]'::json
+                ) AS ITEMS
             FROM ORDERS O
             LEFT JOIN PAYMENT P
                 ON P.ORDER_ID = O.ORDER_ID
+            LEFT JOIN ORDER_ITEM OI
+                ON OI.ORDER_ID = O.ORDER_ID
+            LEFT JOIN PRODUCT_UNIT PU
+                ON PU.UNIT_ID = OI.UNIT_ID
+            LEFT JOIN PRODUCT PR
+                ON PR.PRODUCT_ID = PU.PRODUCT_ID
+            LEFT JOIN PRODUCT_IMAGE PI
+                ON PI.PRODUCT_ID = PR.PRODUCT_ID
+               AND PI.IS_PRIMARY = TRUE
             WHERE O.BUYER_ID = $1
+            GROUP BY
+                O.ORDER_ID,
+                O.STATUS,
+                O.RECEIVER_NAME,
+                O.RECEIVER_PHONE_NUMBER,
+                O.CREATED_AT,
+                O.COMPLETED_AT,
+                P.PAYMENT_METHOD,
+                P.PAYMENT_STATUS,
+                P.TRANSACTION_ID,
+                P.AMOUNT
             ORDER BY O.CREATED_AT DESC
         `, [buyerId]);
 
@@ -519,7 +551,21 @@ const getAdminOrders = async (req, res) => {
             'returned'
         ];
 
-        let query = `
+        const params = [];
+        let whereClause = '';
+
+        if (status) {
+            const formattedStatus = status.toLowerCase();
+            if (!validStatuses.includes(formattedStatus)) {
+                return res.status(400).json({
+                    error: `Invalid status. Allowed values: ${validStatuses.join(', ')}`
+                });
+            }
+            whereClause = ` WHERE LOWER(O.STATUS) = $1`;
+            params.push(formattedStatus);
+        }
+
+        const query = `
             SELECT
                 O.ORDER_ID,
                 O.BUYER_ID,
@@ -535,27 +581,49 @@ const getAdminOrders = async (req, res) => {
                 P.PAYMENT_METHOD,
                 P.TRANSACTION_ID,
                 P.PAYMENT_STATUS,
-                P.AMOUNT AS TOTAL_AMOUNT
+                P.AMOUNT AS TOTAL_AMOUNT,
+                COALESCE(
+                    json_agg(
+                        json_build_object(
+                            'unit_id', OI.UNIT_ID,
+                            'unit_price', OI.UNIT_PRICE,
+                            'unit_status', PU.UNIT_STATUS,
+                            'product_id', PR.PRODUCT_ID,
+                            'product_name', PR.PRODUCT_NAME
+                        ) ORDER BY OI.UNIT_ID
+                    ) FILTER (WHERE OI.UNIT_ID IS NOT NULL),
+                    '[]'::json
+                ) AS ITEMS
             FROM ORDERS O
             LEFT JOIN PAYMENT P
                 ON P.ORDER_ID = O.ORDER_ID
             LEFT JOIN DELIVERY_BOY DB
                 ON DB.DELIVERY_BOY_ID = O.DELIVERY_BOY_ID
+            LEFT JOIN ORDER_ITEM OI
+                ON OI.ORDER_ID = O.ORDER_ID
+            LEFT JOIN PRODUCT_UNIT PU
+                ON PU.UNIT_ID = OI.UNIT_ID
+            LEFT JOIN PRODUCT PR
+                ON PR.PRODUCT_ID = PU.PRODUCT_ID
+            ${whereClause}
+            GROUP BY
+                O.ORDER_ID,
+                O.BUYER_ID,
+                O.ADDRESS_ID,
+                O.DELIVERY_BOY_ID,
+                DB.FULL_NAME,
+                DB.PHONE_NUMBER,
+                O.STATUS,
+                O.RECEIVER_NAME,
+                O.RECEIVER_PHONE_NUMBER,
+                O.CREATED_AT,
+                O.COMPLETED_AT,
+                P.PAYMENT_METHOD,
+                P.TRANSACTION_ID,
+                P.PAYMENT_STATUS,
+                P.AMOUNT
+            ORDER BY O.CREATED_AT DESC
         `;
-        const params = [];
-
-        if (status) {
-            const formattedStatus = status.toLowerCase();
-            if (!validStatuses.includes(formattedStatus)) {
-                return res.status(400).json({
-                    error: `Invalid status. Allowed values: ${validStatuses.join(', ')}`
-                });
-            }
-            query += ` WHERE LOWER(O.STATUS) = $1`;
-            params.push(formattedStatus);
-        }
-
-        query += ` ORDER BY O.CREATED_AT DESC`;
 
         const result = await pool.query(query, params);
 

@@ -1040,11 +1040,12 @@ function AdminOrderManager() {
         <p className="muted">No orders found matching the selected filter.</p>
       ) : (
         <div className="order-list" style={{ display: 'grid', gap: '14px' }}>
-          {orders.map((order) => {
+                    {orders.map((order) => {
             const isBusy = actionLoading === order.order_id;
             const canComplete = order.status === 'shipped';
             const canCancel = order.status === 'pending' || order.status === 'shipped';
             const canReturn = order.status === 'delivered';
+            const items = Array.isArray(order.items) ? order.items : [];
 
             return (
               <article className="order-card" key={order.order_id}>
@@ -1056,7 +1057,7 @@ function AdminOrderManager() {
                   <small>Placed: {formatDate(order.created_at)}</small>
                 </div>
 
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px', margin: '10px 0', fontSize: '13px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px', margin: '10px 0', fontSize: '13px' }}>
                   <div>
                     <strong>Receiver:</strong> {order.receiver_name} ({order.receiver_phone_number})
                   </div>
@@ -1084,6 +1085,41 @@ function AdminOrderManager() {
                     <strong>Total Amount:</strong> {money(order.total_amount || 0)}
                   </div>
                 </div>
+
+                {items.length > 0 && (
+                  <div style={{ marginTop: '10px', borderTop: '1px solid #f0ede6', paddingTop: '10px' }}>
+                    <strong style={{ fontSize: '12px', textTransform: 'uppercase', color: '#536168', display: 'block', marginBottom: '8px' }}>
+                      Order Units ({items.length})
+                    </strong>
+                    <div style={{ display: 'grid', gap: '6px' }}>
+                      {items.map((item) => (
+                        <div
+                          key={item.unit_id}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            padding: '7px 12px',
+                            background: '#f7f5f0',
+                            borderRadius: '4px',
+                            fontSize: '13px',
+                            gap: '10px'
+                          }}
+                        >
+                          <div>
+                            <strong>{item.product_name}</strong>{' '}
+                            <span className="muted">(Product ID #{item.product_id})</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span className="status-pill">Unit ID #{item.unit_id}</span>
+                            <span>Price: <strong>{money(item.unit_price)}</strong></span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="form-actions" style={{ marginTop: '12px', borderTop: '1px solid #f0ede6', paddingTop: '10px' }}>
                   {canComplete && (
@@ -1207,42 +1243,53 @@ function OrderHistory() {
               <article className="order-card" key={order.order_id ?? order.orderId}>
                 <div className="order-card-heading">
                   <strong>Order #{order.order_id ?? order.orderId}</strong>
-                  <span className="status-pill">{order.status}</span>
+                  <span className={`status-pill ${order.status === 'delivered' ? 'green' : ''}`}>
+                    {order.status}
+                  </span>
                   <small>{formatDate(order.created_at ?? order.createdAt)}</small>
                 </div>
 
                 <div className="order-summary-row">
-                  <span>{receiverName}</span>
-                  <span>{receiverPhone}</span>
+                  <span>Receiver: {receiverName} ({receiverPhone})</span>
                 </div>
 
-                <div className="order-meta-list">
-                  <span>Payment: {paymentMethod}</span>
-                  <span>Status: {paymentStatus}</span>
-                  <span>Total: {money(total)}</span>
+                <div className="order-meta-list" style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', margin: '8px 0', fontSize: '13px' }}>
+                  <span><strong>Payment:</strong> {paymentMethod}</span>
+                  <span><strong>Payment Status:</strong> {paymentStatus}</span>
+                  {order.transaction_id && <span><strong>Transaction ID:</strong> <code>{order.transaction_id}</code></span>}
+                  <span><strong>Total:</strong> {money(total)}</span>
                 </div>
 
                 {items.length ? (
-                  <div className="ordered-items">
+                  <div className="ordered-items" style={{ marginTop: '10px', borderTop: '1px solid #f0ede6', paddingTop: '10px' }}>
                     {items.map((item, index) => {
+                      const unitId = item.unitId ?? item.unit_id;
+                      const productId = item.productId ?? item.product_id;
                       const itemName = item.productName ?? item.product_name ?? 'Product';
-                      const itemQuantity = Number(item.quantity ?? 1);
                       const itemPrice = Number(item.unitPrice ?? item.unit_price ?? 0);
                       const image = item.imageUrl ?? item.image_url ?? item.image ?? '';
 
                       return (
-                        <div className="ordered-item" key={`${order.order_id ?? order.orderId}-${item.productId ?? item.product_id ?? index}`}>
-                          {image ? <img src={imageUrl(image)} alt="" /> : <div className="image-placeholder small"><span>Item</span></div>}
+                        <div className="ordered-item" key={`${order.order_id ?? order.orderId}-${unitId ?? index}`}>
+                          {image ? (
+                            <img src={imageUrl(image)} alt={itemName} />
+                          ) : (
+                            <div className="image-placeholder small"><span>Item</span></div>
+                          )}
                           <div>
-                            <strong>{itemName}</strong>
-                            <span>Qty {itemQuantity} · {money(itemPrice)} each</span>
+                            <strong>
+                              {productId ? <Link to={`/products/${productId}`}>{itemName}</Link> : itemName}
+                            </strong>
+                            <span>
+                              Unit ID #{unitId} · {money(itemPrice)}
+                            </span>
                           </div>
                         </div>
                       );
                     })}
                   </div>
                 ) : (
-                  <p className="muted">No item details are attached to this order in the current backend response.</p>
+                  <p className="muted">No item details are attached to this order.</p>
                 )}
               </article>
             );
