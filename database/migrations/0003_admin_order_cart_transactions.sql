@@ -336,7 +336,7 @@ BEGIN
         JOIN product_unit pu
             ON pu.unit_id = oi.unit_id
         WHERE o.buyer_id = NEW.buyer_id
-          AND o.status = 'delivered'
+          AND (o.status = 'delivered' OR o.status = 'returned')
           AND pu.product_id = NEW.product_id
     ) THEN
         RAISE EXCEPTION
