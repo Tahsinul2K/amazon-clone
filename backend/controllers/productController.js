@@ -25,6 +25,9 @@ const getProducts = async (req, res) => {
                       AND pu.unit_status = 'available'
                 ) AS available_stock,
 
+                COALESCE(avg_reviews.average_rating, 0) AS average_rating,
+                COALESCE(avg_reviews.review_count, 0) AS review_count,
+
                 COALESCE(
                     (
                         SELECT json_agg(
@@ -61,6 +64,15 @@ const getProducts = async (req, res) => {
             FROM product p
             LEFT JOIN discount d
             ON d.discount_id = p.discount_id
+            LEFT JOIN (
+                SELECT
+                    product_id,
+                    ROUND(AVG(rating)::numeric, 2) AS average_rating,
+                    COUNT(*) AS review_count
+                FROM review
+                GROUP BY product_id
+            ) avg_reviews
+            ON avg_reviews.product_id = p.product_id
         `;
         
         const params = [];
@@ -109,6 +121,10 @@ const getProductById = async (req, res) => {
                     WHERE pu.product_id = p.product_id
                       AND pu.unit_status = 'available'
                 ) AS available_stock,
+
+                COALESCE(avg_reviews.average_rating, 0) AS average_rating,
+                COALESCE(avg_reviews.review_count, 0) AS review_count,
+
                 COALESCE(
                     (
                         SELECT json_agg(
@@ -143,6 +159,15 @@ const getProductById = async (req, res) => {
             FROM product p
             LEFT JOIN discount d
             ON d.discount_id = p.discount_id
+            LEFT JOIN (
+                SELECT
+                    product_id,
+                    ROUND(AVG(rating)::numeric, 2) AS average_rating,
+                    COUNT(*) AS review_count
+                FROM review
+                GROUP BY product_id
+            ) avg_reviews
+            ON avg_reviews.product_id = p.product_id
             WHERE p.product_id = $1;
         `, [productId]);
 
@@ -204,6 +229,8 @@ const getProductsByCategory = async (req, res) => {
                     WHERE pu.product_id = p.product_id
                       AND pu.unit_status = 'available'
                 ) AS available_stock,
+                COALESCE(avg_reviews.average_rating, 0) AS average_rating,
+                COALESCE(avg_reviews.review_count, 0) AS review_count,
                 COALESCE(
                     (
                         SELECT json_agg(
@@ -238,6 +265,15 @@ const getProductsByCategory = async (req, res) => {
             FROM product p
             LEFT JOIN discount d
             ON d.discount_id = p.discount_id
+            LEFT JOIN (
+                SELECT
+                    product_id,
+                    ROUND(AVG(rating)::numeric, 2) AS average_rating,
+                    COUNT(*) AS review_count
+                FROM review
+                GROUP BY product_id
+            ) avg_reviews
+            ON avg_reviews.product_id = p.product_id
             WHERE EXISTS (
                 SELECT 1
                 FROM product_category pc
@@ -277,6 +313,8 @@ const getProductsBySellerId = async (req, res) => {
                     WHERE pu.product_id = p.product_id
                       AND pu.unit_status = 'available'
                 ) AS available_stock,
+                COALESCE(avg_reviews.average_rating, 0) AS average_rating,
+                COALESCE(avg_reviews.review_count, 0) AS review_count,
                 COALESCE(
                     (
                         SELECT json_agg(
@@ -311,6 +349,15 @@ const getProductsBySellerId = async (req, res) => {
             FROM product p
             LEFT JOIN discount d
             ON d.discount_id = p.discount_id
+            LEFT JOIN (
+                SELECT
+                    product_id,
+                    ROUND(AVG(rating)::numeric, 2) AS average_rating,
+                    COUNT(*) AS review_count
+                FROM review
+                GROUP BY product_id
+            ) avg_reviews
+            ON avg_reviews.product_id = p.product_id
             WHERE p.seller_id = $1
             ORDER BY p.product_id;
         `, [sellerId]);
